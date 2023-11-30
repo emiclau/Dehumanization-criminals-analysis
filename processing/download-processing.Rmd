@@ -1,34 +1,20 @@
 ---
-title: "[EXPERIMENT NAME] Data Processing (change title to reflect your experiment)"
+title: "Dehumanization Project Data Processing"
 output: html_notebook
-
-This code tutorial does three things:
-  
-  1. Downloads experiment data files from AWS
-  2. Selects the incomplete files based on file size
-  3. Moves the incomplete files to a new folder
-  
-If you are unable to run this code for any reason, you can also do this manually (without using the code). You will use Cyberduck to download data and sort through incomplete files by looking at file sizes. To do this manually, follow the tutorial here: https://github.com/GoldenbergLab/lab-helper-codes/blob/main/guides/aws/s3-tasks/download.md
 ---
-We use groundhog (https://groundhogr.com/) to manage our packages. Groundhog makes sure that our package versions are consistent with the current date. This way, everyone will be using packages from the same date to prevent any issues related to package versioning in future analyses. 
 
-To use groundhog, please: 
-(1) make sure that you have the latest version of R/Rstudio installed 
-(2) install RTools
-(3) make sure you are in a new R Session
+The R Version used to create this file is: `R version 4.3.2 (2023-10-31)`. 
+To reproduce analysis, switch with your own version of R by pressing `Tools` > `Global Options` > `R Version`
 
-The R Version used to create this file is: `R version 4.3.0 (2023-04-21 ucrt)`. You can change this out with your own version of R if you are using this template to create your own analysis. If you are reproducing another person's analysis, please download the version of R used by the previous person to ensure a proper reproduction of the code.
 
-You can identify your version of R by typing `version` into the R Console
+STEP 1. Installing groundhog and downloading packages. (Not visible in the output document.)
 
-You can switch your R version by pressing `Tools` > `Global Options` > `R Version`
+```{r libraries setup, include = FALSE}
+knitr::opts_knit$set(root.dir = '/Users/elizabethmiclau/Downloads/Dehumanization Project')
 
-```{r libraries, include = FALSE}
 
-# if you need to install groundhog
-#if(!suppressWarnings(require(groundhog))){remotes::install_github('CredibilityLab/groundhog')}
-
-#call groundhog
+install.packages("remotes")
+if(!suppressWarnings(require(groundhog))){remotes::install_github('CredibilityLab/groundhog')}
 library("groundhog")
 
 
@@ -40,84 +26,192 @@ pkgs <- c(
 
 pkgs_all <- c(pkgs)
 
-# call groundhog. Change out the date for today's date (unless you are running an old analysis)
-groundhog.library(pkgs_all, "2023-04-23")
-
-# this line of code runs better in Windows
-#groundhog.library(pkgs_all, "2023-04-23",ignore.deps = c('rlang', 'fs' ) )
-
-```
-
-
-If this line of code does not run, you can alternatively download the data via Cyberduck and manually move the raw data objects into the data folder. Tutorial here: https://github.com/GoldenbergLab/lab-helper-codes/blob/main/guides/aws/s3-tasks/download.md
-
-paste the following code into the R Console to set AWS credentials. For AWS credentials, reach out to Amit or the lab manager.
-
-Sys.setenv("AWS_ACCESS_KEY_ID" = "mykey",
-       "AWS_SECRET_ACCESS_KEY" = "mysecretkey",
-        "AWS_DEFAULT_REGION" = "us-east-1")
-
-
-```{r download data and examine file sizes for cutoff point}
-
-## Download raw data objects and put them into the "data" folder
-
-#Provides a list of all of the buckets in the list 
-bucketlist("s3://task-data-raw/")
-
-#define your aws-s3 folder
-aws_folder ="bills-task-pilot"
-
-#download all the files from that folder to your raw library 
-system(paste("aws s3 cp s3://task-data-raw/",aws_folder," ../data/raw --recursive", sep = ""))
-
-
+#Change out the date for today's date (unless you are running an old analysis)
+groundhog.library(pkgs_all, "2023-11-27")
 
 
 ```
 
 
-Filter files by size to figure out which data files are incomplete and should therefore be removed
 
-This part often does not work (especially on Windows). If this is the case, please manually examine the files, decide which ones are incomplete and move the incomplete ones into the "did not finish" folder
+STEP 2. Filtering files by size to figure out which data files are incomplete and move the incomplete ones into a newly created "did not finish" folder.
 
-```{r aws}
+```{r downloading data and examining file sizes}
 
+library(dplyr)
+library(ggplot2)
+library(purrr)
+library(stringr)
+library(readr)
+library(fs)
 
+setwd("~/Downloads/Dehumanization Project") # Set the working directory to the folder containing data
+data_folder <- "data"
 
-#create a list of the files and their sizes
-raw_files = file.info(list.files ("../data/raw", 
-                                  full.names =TRUE, 
-                                  recursive=FALSE)) %>% 
-  arrange(size) %>% 
-  mutate(size_kb = size/1000)
+raw_files <- file.info(dir_ls(path = data_folder, regexp = "\\.csv$"))
+raw_files$filename <- rownames(raw_files)  # Add a column with file paths
 
-ggplot(raw_files,aes(x=size_kb)) +
-  geom_histogram(color = "black") 
+# Adding a column for file size in kilobytes
+raw_files$size_kb <- raw_files$size / 1024
 
-#define your kb file size criteria for files you wish to remove
-size_criteria = 150
-shell(paste("find ../data/raw/ -type f -size -150k -exec mv ../data/raw ../data/raw/did_not_finish/+"))
+# Plotting file sizes to visually inspect for a cutoff point
+ggplot(raw_files, aes(x = size_kb)) +
+  geom_histogram(color = "black", bins = 30) +
+  labs(title = "Histogram of File Sizes", x = "File Size (KB)", y = "Frequency")
 
-system(paste("mv ../data/raw ../data/raw/did_not_finish/ " ))
+# Define your file size criteria for incomplete (in KB)
+size_criteria_kb <- 6.7
 
+# Define and create the "did not finish" folder
+incomplete_folder <- paste0(data_folder, "/did_not_finish")
+dir.create(incomplete_folder, recursive = TRUE, showWarnings = FALSE)
 
-path =  "../data/raw" #path to the raw files (of good size)
+# Find files smaller than the size criteria and move them
+small_files <- raw_files$filename[raw_files$size_kb < size_criteria_kb]
+for (file in small_files) {
+  file.rename(from = file, to = file.path(incomplete_folder, basename(file)))
+}
 
-#get all csv files and combine them
-csv_files <- fs::dir_ls(path, regexp = "\\.csv$") 
+# Path to remaining CSV files
+csv_files <- dir_ls(path = data_folder, regexp = "\\.csv$") 
 
-#map dataframe on to csvs
-d = csv_files %>% 
-  map_dfr(read_csv)
+# Combine the remaining CSV files into one data frame
+combined_data <- map_dfr(csv_files, read_csv)
+
+# Optional: Write the combined data frame to a new CSV file
+write.csv(combined_data, "combined_data.csv", row.names = FALSE)
 
 
 ```
 
 
-Process the data in the next few chunks. The final output of this data processing should be one long-format csv that contains one trial per line.
+STEP 3. Process the data in the next few chunks. The final output of this data processing should be one long-format csv that contains one trial per line.
+```{r cleaning the dataset}
 
-```{r}
+combined_data <- read.csv("~/Downloads/Dehumanization Project/combined_data.csv")
+
+# Viewing the data set
+dim(combined_data)   # dimensions
+names(combined_data) # variables
+str(combined_data)   # structure
+
+# Removing and reordering columns
+combined_data <- combined_data[ , !(names(combined_data) %in% c('rt', 'view_history', 'internal_node_id','keep_remove','trial_type'))]
+combined_data <- combined_data[c("participant_id", "trial_index", "responses", 
+                                 "stimulus", "button_pressed", "Name", "trial", 
+                                 "agent_names_trial", "agent_DH", "agent_NDH", "time_elapsed")]
+
+# Convert units from 'time_elapsed' from ms to minutes and seconds
+combined_data$time_elapsed_min_sec <- sprintf("%d:%02d", 
+                                              combined_data$time_elapsed %/% 60000, 
+                                              (combined_data$time_elapsed %% 60000) %/% 1000)
+combined_data <- combined_data[ , !(names(combined_data) %in% c('time_elapsed'))]
+combined_data <- combined_data %>%
+  rename(time_elapsed = time_elapsed_min_sec)
+
+# Ensuring each participant completed the full experiment (40-41 trial_index lines). 
+participant_trial_count <- combined_data %>%
+  group_by(participant_id) %>%
+  summarise(trial_count = n_distinct(trial_index))
+incomplete_participants <- participant_trial_count %>%
+  filter(!(trial_count %in% c(40, 41)))
+if (nrow(incomplete_participants) > 0) {
+  print("Some participants did not complete the full experiment..")
+  print(incomplete_participants)
+} else {
+  print("All participants completed the full experiment.")
+}
+
+# Checking participants ID
+check_responses <- function(data) {
+  data %>%
+    filter(trial_index == 0) %>%
+    mutate(check = str_detect(responses, paste0("\\{\"ID\":\"", participant_id, "\"\\}"))) %>%
+    filter(!check) %>%
+    select(participant_id, trial_index, responses)
+}
+discrepancies <- check_responses(combined_data)
+if (nrow(discrepancies) > 0) {
+  print("Discrepancies found in the following rows:")
+  print(discrepancies)
+} else {
+  print("All manually entered participant IDs match recorded IDs.")
+}
+combined_data <- combined_data %>%
+  mutate(responses = ifelse(trial_index == 0, NA, responses))
+
+
+# Checking that all participants passed the Attention Checks
+# Attention Check 1: Giraffe
+discrepancy_indices <- which(combined_data$trial_index == 3 & 
+                             !grepl("iraf|irraf|neck", combined_data$responses))
+if (length(discrepancy_indices) > 0) {
+  cat("The following rows failed Attention Check #1")
+  print(discrepancy_indices)
+} else {
+  cat("All participants pass Attention Check #1.")
+}
+combined_data <- combined_data %>%
+  mutate(responses = ifelse(trial_index == 3, NA, responses))
+
+# Attention Check 2: "but"
+discrepancy_indices <- which(combined_data$trial_index == 5 & 
+                             !str_detect(combined_data$responses, "but"))
+if (length(discrepancy_indices) > 0) {
+  cat("The following rows failed Attention Check #2.")
+  print(discrepancy_indices)
+} else {
+  cat("All participants passed Attention Check #2.")
+}
+combined_data <- combined_data %>%
+  mutate(responses = ifelse(trial_index == 5, NA, responses))
+
+# Attention Check 3: "rock"
+discrepancy_indices <- which(combined_data$trial_index == 18 & 
+                             !str_detect(combined_data$responses, "rock"))
+if (length(discrepancy_indices) > 0) {
+  cat("The following rows failed Attention Check #3.")
+  print(discrepancy_indices)
+} else {
+  cat("All participants passed Attention Check #3.")
+}
+combined_data <- combined_data %>%
+  mutate(responses = ifelse(trial_index == 18, NA, responses))
+
+# Cleaning the 'stimulus' column
+combined_data <- combined_data %>%
+  mutate(stimulus = ifelse(str_detect(stimulus, "<img src=\"img/stimuli/"), NA, stimulus))
+combined_data <- combined_data %>%
+  mutate(stimulus = gsub("img/stimuli/Slide([0-9]+)\\.png", "Slide \\1", stimulus))
+
+# Cleaning the 'button_pressed' column
+combined_data <- combined_data %>%
+  mutate(button_pressed = ifelse(
+    !str_detect(stimulus, "Slide") & 
+    !str_detect(Name, "gender|phone|computer"),
+    NA, 
+    button_pressed
+  ))
+
+
+# Viewing newly formatted data set
+view(combined_data)
+
+# Converting variables to correct format
+str(combined_data)
+
+# Convert time_elapsed from chr to time string
+install.packages("lubridate") # package for time conversion
+library(lubridate)
+combined_data$time_elapsed <- as.hms(hms(combined_data$time_elapsed))
+## THIS IS NOT WORKING YET
+
+
+
+
+
+
+
 
 ```
 
