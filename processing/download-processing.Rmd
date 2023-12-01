@@ -7,16 +7,14 @@ The R Version used to create this file is: `R version 4.3.2 (2023-10-31)`.
 To reproduce analysis, switch with your own version of R by pressing `Tools` > `Global Options` > `R Version`
 
 
-STEP 1. Installing groundhog and downloading packages. (Not visible in the output document.)
+STEP 1. Installing groundhog and downloading packages. Not visible in output document.
 
 ```{r libraries setup, include = FALSE}
 knitr::opts_knit$set(root.dir = '/Users/elizabethmiclau/Downloads/Dehumanization Project')
 
-
 install.packages("remotes")
 if(!suppressWarnings(require(groundhog))){remotes::install_github('CredibilityLab/groundhog')}
 library("groundhog")
-
 
 # put all packages in and call groundhog
 pkgs <- c(
@@ -32,12 +30,9 @@ groundhog.library(pkgs_all, "2023-11-27")
 
 ```
 
-
-
 STEP 2. Filtering files by size to figure out which data files are incomplete and move the incomplete ones into a newly created "did not finish" folder.
 
 ```{r downloading data and examining file sizes}
-
 library(dplyr)
 library(ggplot2)
 library(purrr)
@@ -45,9 +40,8 @@ library(stringr)
 library(readr)
 library(fs)
 
-setwd("~/Downloads/Dehumanization Project") # Set the working directory to the folder containing data
-data_folder <- "data"
-
+setwd("~/Downloads/Dehumanization Project") # Confirming working directory to the folder containing data
+data_folder <- '/Users/elizabethmiclau/Downloads/Dehumanization Project/data'
 raw_files <- file.info(dir_ls(path = data_folder, regexp = "\\.csv$"))
 raw_files$filename <- rownames(raw_files)  # Add a column with file paths
 
@@ -76,9 +70,9 @@ for (file in small_files) {
 csv_files <- dir_ls(path = data_folder, regexp = "\\.csv$") 
 
 # Combine the remaining CSV files into one data frame
-combined_data <- map_dfr(csv_files, read_csv)
+combined_data <- map_dfr(csv_files, ~read_csv(.x, show_col_types = FALSE))
 
-# Optional: Write the combined data frame to a new CSV file
+# Creating a new data frame (CSV file) with combined data
 write.csv(combined_data, "combined_data.csv", row.names = FALSE)
 
 
@@ -87,7 +81,6 @@ write.csv(combined_data, "combined_data.csv", row.names = FALSE)
 
 STEP 3. Process the data in the next few chunks. The final output of this data processing should be one long-format csv that contains one trial per line.
 ```{r cleaning the dataset}
-
 combined_data <- read.csv("~/Downloads/Dehumanization Project/combined_data.csv")
 
 # Viewing the data set
@@ -95,11 +88,13 @@ dim(combined_data)   # dimensions
 names(combined_data) # variables
 str(combined_data)   # structure
 
-# Removing and reordering columns
+# Removing and renaming columns
 combined_data <- combined_data[ , !(names(combined_data) %in% c('rt', 'view_history', 'internal_node_id','keep_remove','trial_type'))]
-combined_data <- combined_data[c("participant_id", "trial_index", "responses", 
-                                 "stimulus", "button_pressed", "Name", "trial", 
-                                 "agent_names_trial", "agent_DH", "agent_NDH", "time_elapsed")]
+combined_data <- combined_data %>% 
+                 rename(name = Name)
+combined_data <- combined_data[c("participant_id", "time_elapsed", "trial_index", "responses", 
+                                 "stimulus", "button_pressed", "name", "trial", 
+                                 "agent_names_trial", "agent_DH", "agent_NDH")]
 
 # Convert units from 'time_elapsed' from ms to minutes and seconds
 combined_data$time_elapsed_min_sec <- sprintf("%d:%02d", 
@@ -188,30 +183,144 @@ combined_data <- combined_data %>%
 combined_data <- combined_data %>%
   mutate(button_pressed = ifelse(
     !str_detect(stimulus, "Slide") & 
-    !str_detect(Name, "gender|phone|computer"),
+    !str_detect(name, "gender|phone|computer"),
     NA, 
     button_pressed
   ))
 
+combined_data <- combined_data %>%
+  mutate(choice = sapply(1:nrow(.), function(i) {
+    if(grepl("Slide", combined_data$stimulus[i])) {
+      # Split the agent names
+      agents <- strsplit(as.character(combined_data$agent_names_trial[i]), ",")[[1]]
+      
+      # Determine the chosen name based on button_pressed
+      chosen_name <- ifelse(combined_data$button_pressed[i] == 0, agents[1], agents[2])
+      
+      # Check which column (agent_DH or agent_NDH) matches the chosen name
+      if(chosen_name == combined_data$agent_DH[i]) {
+        return("DH")
+      } else if(chosen_name == combined_data$agent_NDH[i]) {
+        return("NDH")
+      } else {
+        return(NA)  # Return NA if no match is found
+      }
+    } else {
+      return(NA)  # Return NA if stimulus does not contain "Slide"
+    }
+  }))
 
-# Viewing newly formatted data set
-view(combined_data)
 
 # Converting variables to correct format
-str(combined_data)
+combined_data$stimulus <- factor(combined_data$stimulus)
+combined_data$trial_index <- factor(combined_data$trial_index)
+combined_data$button_pressed <- factor(combined_data$button_pressed)
+combined_data$trial <- factor(combined_data$trial)
+combined_data$agent_DH <- factor(combined_data$agent_DH)
+combined_data$agent_NDH <- factor(combined_data$agent_NDH)
+str(combined_data) # Checking my work
 
-# Convert time_elapsed from chr to time string
-install.packages("lubridate") # package for time conversion
-library(lubridate)
-combined_data$time_elapsed <- as.hms(hms(combined_data$time_elapsed))
-## THIS IS NOT WORKING YET
+# Cleaning up the environment
+rm(discrepancies, incomplete_participants, participant_trial_count, small_files, size_criteria_kb, discrepancy_indices, file)
 
+# Reordering the columns
+combined_data <- combined_data[c("participant_id", "time_elapsed", "trial_index", "responses", 
+                                 "stimulus", "button_pressed", "name", "trial", 
+                                 "agent_names_trial", "agent_DH", "agent_NDH", "choice")]
 
-
-
-
-
-
+view(combined_data)
 
 ```
 
+STEP 4. Process the survey data.
+
+```{r cleaning the survey data}
+setwd("~/Downloads/Dehumanization Project") # Confirming working directory to the folder containing data
+survey_data <- read.csv("~/Downloads/Dehumanization Project/surveydata.csv")
+view(survey_data)
+
+# Removing, renaming, and reordering columns
+survey_data <- survey_data[ , !(names(survey_data) %in% c('Status', 'IPAddress', 'Progress','Finished','RecipientLastName','RecipientFirstName','RecipientEmail','ExternalReference','LocationLatitude','LocationLongitude','DistributionChannel','UserLanguage','StartDate','EndDate'))]
+survey_data <- survey_data[-2, ]
+rownames(survey_data) <- NULL
+survey_data <- survey_data %>% 
+                 rename(Duration_in_sec = Duration..in.seconds.,
+                        Date = RecordedDate,
+                        Prolific_ID = id,
+                        Response_ID = ResponseId,
+                        Image_Difficulties1 = Q13,
+                        Image_Difficulties2 = Q16,
+                        Comments_Questions = Q14)
+survey_data <- survey_data[c("Response_ID", "Prolific_ID", "Date","Duration_in_sec","Q2_1", "Q3_1", 
+                                 "Q3_2", "Q3_3", "Q3_4", "Q3_5", "Q3_6", "Q5_1", "Q5_2", "Q5_3", 
+                                 "Q5_4", "Q5_5", "Q5_6","Q5_7", "Age","Gender", "Race", "Income", 
+                                 "Conservatism", "Education", "Image_Difficulties1", 
+                                 "Image_Difficulties2","Comments_Questions", "Data_Quality")]
+
+# Replacing values with notes to just the number
+survey_data[] <- lapply(survey_data, function(x) gsub("1 = Not at all", "1", x))
+survey_data[] <- lapply(survey_data, function(x) gsub("4 = A moderate amount", "4", x))
+survey_data[] <- lapply(survey_data, function(x) gsub("7 = An extreme amount", "7", x))
+survey_data[] <- lapply(survey_data, function(x) gsub("1 = Strongly disagree", "1", x))
+survey_data[] <- lapply(survey_data, function(x) gsub("7 = Strongly agree", "7", x))
+
+# Converting all columns to the correct variable types
+survey_data$Date <- as.Date(survey_data$Date, format = "%Y-%m-%d %H:%M:%S")
+survey_data$Response_ID <- factor(survey_data$Response_ID) # Response_ID: chr to factor
+survey_data$Response_ID[1] <- NA
+survey_data$Prolific_ID <- factor(survey_data$Prolific_ID) # Prolific_ID: chr to factor
+survey_data$Prolific_ID[1] <- NA
+survey_data$Q3_1 <- factor(survey_data$Q3_1) # Q3_1: chr to factor
+survey_data$Q3_2 <- factor(survey_data$Q3_2) # Q3_2: chr to factor
+survey_data$Q3_3 <- factor(survey_data$Q3_3) # Q3_3: chr to factor
+survey_data$Q3_4 <- factor(survey_data$Q3_4) # Q3_4: chr to factor
+survey_data$Q3_5 <- factor(survey_data$Q3_5) # Q3_5: chr to factor
+survey_data$Q3_6 <- factor(survey_data$Q3_6) # Q3_6: chr to factor
+survey_data$Q5_1 <- factor(survey_data$Q5_1) # Q5_1: chr to factor
+survey_data$Q5_2 <- factor(survey_data$Q5_2) # Q5_2: chr to factor
+survey_data$Q5_3 <- factor(survey_data$Q5_3) # Q5_3: chr to factor
+survey_data$Q5_4 <- factor(survey_data$Q5_4) # Q5_4: chr to factor
+survey_data$Q5_5 <- factor(survey_data$Q5_5) # Q5_5: chr to factor
+survey_data$Q5_6 <- factor(survey_data$Q5_6) # Q5_6: chr to factor
+survey_data$Q5_7 <- factor(survey_data$Q5_7) # Q5_7: chr to factor
+survey_data$Race <- factor(survey_data$Race) # Race: chr to factor
+survey_data$Gender <- factor(survey_data$Gender) # Race: chr to factor
+survey_data$Income <- factor(survey_data$Income) # Race: chr to factor
+survey_data$Conservatism <- factor(survey_data$Conservatism) # Conservatism: chr to ordered factor
+survey_data$Image_Difficulties1 <- factor(survey_data$Image_Difficulties1) # Image_Difficulties1: chr to factor
+survey_data$Image_Difficulties2 <- factor(survey_data$Image_Difficulties2) # Image_Difficulties2: chr to factor
+survey_data$Comments_Questions <- factor(survey_data$Comments_Questions) # Comments_Questions: chr to factor
+survey_data$Data_Quality <- factor(survey_data$Data_Quality) # Data_Quality: chr to factor
+
+survey_data$Conservatism <- factor(
+  survey_data$Conservatism,
+  levels = c("Extremely Liberal", "Liberal", "Somewhat Liberal", 
+             "Middle of the Road", "Somewhat Conservative", 
+             "Conservative", "Extremely Conservative"),
+  ordered = TRUE
+)
+survey_data$Education <- factor( # Education: chr to ordered factor
+  survey_data$Education,
+  levels = c("No degree", "High school/GED", "Some college experience", 
+             "2-year college degree (A.A.)", "4-year college degree (BA/BS)", 
+             "Graduate or Professional Degree (MA/ MBA/ MS/ PhD)"),
+  ordered = TRUE)
+
+# Ignore Warnings for the following conversions (reason: First row cannot be a numerical value)
+survey_data$Duration_in_sec <- as.numeric(survey_data$Duration_in_sec) # Duration: chr to num
+survey_data$Q2_1 <- as.numeric(survey_data$Q2_1) # Q2_1: chr to num
+survey_data$Age <- as.numeric(survey_data$Age) # Age: chr to num
+
+# Reviewing responses to the Image Difficulty Question
+survey_data$Image_Difficulties2[survey_data$Image_Difficulties2 == ""] <- NA
+print(levels(survey_data$Image_Difficulties2))
+
+# Reviewing responses to the Image Difficulty Question
+survey_data$Comments_Questions[survey_data$Comments_Questions == ""] <- NA
+survey_data$Comments_Questions <- as.character(survey_data$Comments_Questions)
+survey_data$Comments_Questions[survey_data$Comments_Questions %in% c("No", "None", "no", "No comments", "I have no comments. ")] <- NA
+survey_data$Comments_Questions <- factor(survey_data$Comments_Questions)
+print(levels(survey_data$Comments_Questions))
+  
+view(survey_data)
+```
