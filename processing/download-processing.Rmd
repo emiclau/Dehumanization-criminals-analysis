@@ -220,6 +220,7 @@ combined_data$agent_DH <- factor(combined_data$agent_DH)
 combined_data$agent_NDH <- factor(combined_data$agent_NDH)
 str(combined_data) # Checking my work
 
+
 # Cleaning up the environment
 rm(discrepancies, incomplete_participants, participant_trial_count, small_files, size_criteria_kb, discrepancy_indices, file)
 
@@ -324,3 +325,7 @@ print(levels(survey_data$Comments_Questions))
   
 view(survey_data)
 ```
+
+
+STEP 5. Integrating the survey data into the experimental data.
+```{r integrating survey_data into combined_data}
