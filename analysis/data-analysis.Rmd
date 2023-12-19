@@ -1,76 +1,188 @@
 ---
-title: "[YOUR STUDY] Data Analysis"
+title: "Dehumanization Project Data Analysis"
 output: html_notebook
 ---
 
-We use groundhog (https://groundhogr.com/) to manage our packages. Groundhog makes sure that our package versions are consistent with the current date. This way, everyone will be using packages from the same date to prevent any issues related to package versioning in future analyses. 
+The R Version used to create this file is: `R version 4.3.2 (2023-10-31)`. 
+To reproduce analysis, switch with your own version of R by pressing `Tools` > `Global Options` > `R Version`
 
-To use groundhog, please: 
-(1) make sure that you have the latest version of R/ RStudio installed; 
-(2) install RTools
-(3) make sure you are in a new R Session
-
-
-The R Version used to create this file is: `R version 4.3.0 (2023-04-21 ucrt)`. You can change this out with your own version of R if you are using this template to create your own analysis. If you are reproducing another person's analysis, please download the version of R used by the previous person to ensure a proper reproduction of the code.
-
-You can identify your version of R by typing `version` into the R Console
-
-You can switch your R version by pressing `Tools` > `Global Options` > `R Version`
+Goal of the logistical regression: We would like to determine whether the agents expressing dehumanizing 
+reactions are selected more frequently than those expressing non-dehumanizing reactions.
 
 
-```{r download packages and format csv to prepare for analysis}
+### Installing and downloading packages and preparing for analysis
+```{r Download packages and format csv to prepare for analysis}
 
-# if you need to install groundhog
-#if(!suppressWarnings(require(groundhog))){remotes::install_github('CredibilityLab/groundhog')}
+knitr::opts_knit$set(root.dir = '/Users/elizabethmiclau/Downloads/Dehumanization Project')
 
-#call groundhog
+# Change out the working directory for your own
+
+install.packages("remotes")
+if(!suppressWarnings(require(groundhog))){remotes::install_github('CredibilityLab/groundhog')}
 library("groundhog")
 
-
-
-# put all packages in and call groundhog
+# Put all packages in and call groundhog
 pkgs <- c(
-    "Rmisc",
-    "tidyverse",
-    "lme4",
-    "lmerTest",
-    "jsonlite",
-    "car",
-    "simr",
-    "knitr"
+    "aws.s3",
+    "tidyverse"
     )
 
 pkgs_all <- c(pkgs)
 
-# call groundhog. Change out the date for today's date (unless you are running an old analysis)
-groundhog.library(pkgs_all, "2023-04-23")
+# Change out the date for today's date (unless you are running an old analysis)
+groundhog.library(pkgs_all, "2023-11-27")
 
-# this line of code runs better in Windows
-#groundhog.library(pkgs_all, "2023-04-23",ignore.deps = c('rlang', 'fs' ) )
+
+# Importing the data: 
+full_data_widelong <- read.csv("~/Downloads/Dehumanization Project/full_data_widelong.csv")
+View(full_data_widelong)
+
+# Necessary libraries
+library(dplyr)
+library(ggplot2)
+
+# Exclude the last row with prompt descriptions for these descriptive analyses:
+full_data_widelong <- full_data_widelong[-nrow(full_data_widelong), ]
+view(full_data_widelong)
+```
+
+
+### Participant Demographics - 
+```{r Number of Participants}
+
+# Number of Participants
+unique_participants <- full_data_widelong %>% distinct(Prolific_ID, .keep_all = TRUE) # Filtering unique participants based on Prolific_ID
+num_participants <- nrow(unique_participants) # Count unique participants
+print(paste("Number of Participants:", num_participants))
+
+```
+ 
+```{r Gender Distribution of Participants}
+
+# Gender Distribution
+gender_stats <- table(unique_participants$Gender)
+print(gender_stats)
+
+```
+
+```{r Age Distribution of Participants}
+
+age_stats <- summary(unique_participants$Age)
+print(age_stats)
+ggplot(unique_participants, aes(x=Age)) + 
+  geom_histogram(binwidth=1, fill="blue", color="black") +
+  scale_x_continuous(breaks=seq(10, 80, by=10), limits=c(10, 80)) +
+  ylim(0, 5) +
+  labs(title="Age Distribution of Unique Participants", x="Age", y="Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r Race Distribution of Participants}
+
+# Race Distribution
+race_stats <- table(unique_participants$Race)
+print(race_stats)
+ggplot(unique_participants, aes(x=Race, fill=Race)) +
+  geom_bar() +
+  labs(title="Race Distribution of Participants", x="Race", y="Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r Income Distribution of Participants}
+
+# Income Distribution
+income_ordered <- c("Less than $40,000", "$40,000-$79,999", "$80,000-$119,999", "$120,000-$199,999", "More than $200,000")
+unique_participants$Income <- factor(unique_participants$Income, levels = income_ordered)
+income_stats <- table(unique_participants$Income)
+print(income_stats)
+ggplot(unique_participants, aes(x=Income, fill=Income)) +
+  geom_bar() +
+  labs(title="Income Distribution of Participants", x="Income", y="Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r Conservatism Distribution of Participants}
+
+# Conservatism Distribution
+conservatism_ordered <- c("Extremely Liberal", "Liberal", "Somewhat Liberal", "Middle of the Road", "Somewhat Conservative", "Conservative", "Extremely Conservative")
+unique_participants$Conservatism <- factor(unique_participants$Conservatism, levels = conservatism_ordered)
+conservatism_stats <- table(unique_participants$Conservatism)
+print(conservatism_stats)
+ggplot(unique_participants, aes(x=Conservatism, fill=Conservatism)) +
+  geom_bar() +
+  labs(title="Conservatism Distribution of Participants", x="Conservatism", y="Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r Education Distribution of Participants}
+
+# Education Distribution
+education_ordered <- c("High school/GED", "Some college experience", "2-year college degree (A.A.)", "4-year college degree (BA/BS)", "Graduate or Professional Degree (MA/ MBA/ MS/ PhD)")
+unique_participants$Education <- factor(unique_participants$Education, levels = education_ordered)
+education_stats <- table(unique_participants$Education)
+print(education_stats)
+ggplot(unique_participants, aes(x=Education, fill=Education)) +
+  geom_bar() +
+  labs(title="Education Distribution of Participants", x="Education", y="Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 ```
 
 
-### Descriptives
-```{r Descriptives of experiment results}
+### Running a Binomial Test
 
-## graph of the distribution of the participants' rankings or results? 
+#### In our study, we aim to determine whether participants exhibit a preference for selecting agents that express a dehumanizing reaction (DH) over those that express a non-dehumanizing reaction (NDH), beyond what would be expected by mere chance. To evaluate this, we have chosen to conduct a Binomial Test.
+
+```{r Binomial Test }
+
+# Loading the dataset
+full_data_widelong <- read.csv("~/Downloads/Dehumanization Project/full_data_widelong.csv")
+
+# Check unique values in 'choice' column to ensure it's binary
+full_data_widelong$choice <- factor(full_data_widelong$choice)
+unique(full_data_widelong$choice)
+
+# Count the number of DH choices
+num_DH_choices <- sum(as.character(full_data_widelong$choice) == "DH", na.rm = TRUE)
+num_DH_choices <- as.integer(num_DH_choices)
+total_choices <- sum(!is.na(full_data_widelong$choice))
+
+# Perform the Binomial Test
+binomial_test <- binom.test(x = num_DH_choices, n = total_choices, p = 0.5)
+print(binomial_test)
+
+# Interpreting the results of the Binomial Test:
+# The p-value of < 2.2e-16 indicates that the choice of DH is significantly different from chance.
 
 ```
 
 
-### Participant Demographics
-```{r Demographics of participants}
 
-## number of participants
 
-## gender
 
-## age
 
-## graph
 
-```
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 ### H1 (Main Effect) Analysis (replace this with description of H1)
