@@ -254,25 +254,77 @@ write.csv(experiment_data_widelong, "experiment_data_widelong.csv", row.names = 
 
 
 STEP 4. Processing the experimental data - Long format
-```{r Swtiching experiment_data to long format}
+```{r Switching experiment_data to long format}
 
 library(tidyr)
+library(dplyr)
+experiment_data_long <- read.csv("~/Downloads/Dehumanization Project/experiment_data_widelong.csv")
 
-# Reshape the data into a long format
-experiment_data_long <- experiment_data_widelong %>%
-  pivot_longer(
-    cols = c(left_response, right_response, left_rating, right_rating), 
-    names_to = c(".value", "side"), 
-    names_pattern = "(left|right)_(.*)"
-  ) %>%
-  mutate(side = ifelse(side == "left", "1 left", "2 right"))
+# Removing 'time_elapsed' and 'trial_index' columns
+experiment_data_long <- experiment_data_long %>% 
+  select(-trial_index)
 
-# View the first few rows of the reshaped data
-head(experiment_data_long)
+# Creating 'gender' column
+experiment_data_long <- experiment_data_long %>% 
+  mutate(gender = case_when(
+    name == "gender" & button_pressed == 0 ~ "Male",
+    name == "gender" & button_pressed == 1 ~ "Female",
+    TRUE ~ as.character(NA)
+  ))
 
+# Creating 'device' column
+experiment_data_long <- experiment_data_long %>% 
+  mutate(device = case_when(
+    name == "phone" & button_pressed == 1 ~ "Phone",
+    name == "computer" & button_pressed == 0 ~ "Computer",
+    TRUE ~ as.character(NA)
+  ))
 
-## WORK IN PROGRESS ##
+# Removing all rows without a value in 'button_pressed' column
+experiment_data_long <- experiment_data_long %>% 
+  filter(!is.na(button_pressed))
 
+# Checking for 12 rows per ppt
+prolific_counts <- table(experiment_data_long$Prolific_ID)
+if(any(prolific_counts != 12)) {
+  warning("There are Prolific_IDs with counts not equal to 12")
+}
+
+# Creating left and right columns
+experiment_data_long <- experiment_data_long %>% # Creating 'left_agent' and 'right_agent' columns
+  mutate(left_agent = ifelse(grepl(",", agent_names_trial), sub(",.*", "", agent_names_trial), NA),
+         right_agent = ifelse(grepl(",", agent_names_trial), sub(".*,", "", agent_names_trial), NA))
+experiment_data_long <- experiment_data_long %>% # Creating 'left_rating' and 'right_rating' columns
+  mutate(left_rating = ifelse(left_agent == agent_DH, "DH", "NDH"),
+         right_rating = ifelse(right_agent == agent_DH, "DH", "NDH"))
+experiment_data_long <- experiment_data_long %>% # Creating 'left_choice' and 'right_choice' columns
+  mutate(left_choice = ifelse(choice == left_rating, 1, 0),
+         right_choice = ifelse(choice == right_rating, 1, 0))
+
+# Removing unneeded columns
+experiment_data_long <- experiment_data_long %>% 
+  select(-responses, -button_pressed, -name, -agent_names_trial, -agent_DH, -agent_NDH, -choice)
+
+# Transforming the data from widelong to long format
+experiment_data_long <- experiment_data_long %>%
+  gather(key = "side", value = "agent", left_agent, right_agent) %>%
+  gather(key = "rating_side", value = "rating", left_rating, right_rating) %>%
+  gather(key = "choice_side", value = "choice", left_choice, right_choice) %>%
+  filter(ifelse(side == "left_agent", rating_side == "left_rating", rating_side == "right_rating") &
+         ifelse(side == "left_agent", choice_side == "left_choice", choice_side == "right_choice")) %>%
+  select(-rating_side, -choice_side) %>%
+  mutate(side = ifelse(side == "left_agent", "left", "right")) %>%
+  arrange(Prolific_ID, trial, side)
+
+# Remove rows where 'side' is "right" and 'gender' or 'device' is not NA
+experiment_data_long <- experiment_data_long %>%
+  filter(!(side == "right" & (!is.na(gender) | !is.na(device))))
+
+# For rows where 'side' is "left" and 'gender' is not NA, shift 'gender' up and remove the row
+rows_to_shift <- which(experiment_data_long$side == "left" & !is.na(experiment_data_long$gender))
+
+# Creating a new data frame (CSV file) with experiment data
+write.csv(experiment_data_long, "experiment_data_long.csv", row.names = FALSE)
 
 
 ```
