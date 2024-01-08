@@ -35,7 +35,6 @@ groundhog.library(pkgs_all, "2023-11-27")
 
 # Importing the data: 
 full_data_widelong <- read.csv("~/Downloads/Dehumanization Project/full_data_widelong.csv")
-View(full_data_widelong)
 
 # Necessary libraries
 library(dplyr)
@@ -161,5 +160,149 @@ print(binomial_test)
 
 # Interpreting the results of the Binomial Test:
 # The p-value of < 2.2e-16 indicates that the choice of DH is significantly different from chance.
+
+```
+
+
+### Running a Mixed-effects Model
+
+#### This new approach provides insights into the variability of choices between "DH" and "NDH" across participants, accounting for the fact that multiple choices come from the same participant.
+
+```{r Nested Data - Mixed-effects Model}
+
+install.packages("lme4")
+install.packages("lmerTest")
+library(lme4)
+library(lmerTest) # For summaries including p-values
+
+# Loading the dataset
+experiment_data_long_test <- read.csv("~/Downloads/Dehumanization Project/experiment_data_long.csv")
+
+# Preprocessing the data
+experiment_data_long_test <- subset(experiment_data_long_test, !is.na(trial)) # Remove phone and gender rows
+experiment_data_long_test <- subset(experiment_data_long_test, choice != 0) # Remove rows where 'choice' is 0
+experiment_data_long_test$choice <- ifelse(experiment_data_long_test$rating == "DH", 1, 0) # Convert 'choice' from DH/NDH to 1/0
+
+# Fit a mixed-effects logistic regression model. The (1 | Prolific_ID) adds a random effect for each participant.
+model <- glmer(choice ~ 1 + (1 | Prolific_ID), family = binomial, data = experiment_data_long_test)
+
+# View the summary of the model
+summary(model)
+
+
+# 1. Visual Summary: Individual differences in the choice patterns
+library(ggplot2) # Load necessary library
+experiment_data_long_test$choice <- as.numeric(experiment_data_long_test$rating == "DH") # Counting DH choices
+proportions <- aggregate(choice ~ Prolific_ID, data = experiment_data_long_test, mean) # Proportion of DH choices
+ggplot(proportions, aes(x = Prolific_ID, y = choice)) + # Plotting
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Proportion of DH Choices per Participant", x = "Participant ID", y = "Proportion of DH Choices")
+
+# Interpretation of the Output:
+  # AIC/BIC (Akaike and Bayesian Information Criterion): These values are useful for comparing different models fit to this data to see if they provide a better balance of goodness of fit and simplicity. If this is the only model you are considering, then the AIC and BIC give you a baseline for comparison if you decide to add more predictors or make other adjustments to your model.
+  # Random Effects: Tell us much variability there is in the choices among different participants. For us, the random effect of Prolific_ID shows some level of variability across participants.
+  # Fixed Effects: The fixed effect is the intercept; Tells us the log odds of choosing DH (versus NDH) when all other variables are held at zero.
+  # The z-value and p-value (Pr(>|z|)) for the intercept test whether it is significantly different from zero. A significant intercept in a model with no other predictors suggests that there is an overall tendency towards one choice over the other in the population. So, since ours is negative and is statistically significant, this suggests that the overall tendency is towards choosing NDH over DH.
+
+
+# 2. Visualize Random Effects: How participant-level intercepts vary around the overall intercept
+library(lattice) # Load necessary library
+ranef_plot <- dotplot(ranef(model, condVar = TRUE)) # Extract and plot random effects
+print(ranef_plot)
+
+# Interpretation of the Plot:
+  # Fair amount of variability among participants, with some showing a much higher or lower tendency to choose DH compared to the average (the vertical line at x=0). The intercept for some participants is significantly different from zero, which reinforces the appropriateness of using a mixed-effects model for your data since it accounts for this individual variability.
+
+
+# 3. Visualize the residuals of our mixed-effects model
+plot(residuals(model), main="Residuals Plot")
+
+# Interpretation of the Plot:
+  # Clusters at two levels is expected in logistic regression. For many observations, the model's predictions are close to the actual values.
+  # No obvious pattern to the residuals, suggesting the model's variance is constant across different levels of prediction (homoscedasticity).
+  # A few residuals with higher absolute values. Possibly outliars or the model didn't fit very well?
+
+
+# 4. Visualize the predicted probabilities of choosing DH for each participant.
+experiment_data_long_test$predicted_prob <- predict(model, type = "response")
+ggplot(experiment_data_long_test, aes(x = Prolific_ID, y = predicted_prob)) +
+  geom_jitter(width = 0.2, alpha = 0.5) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Predicted Probabilities of DH Choice per Participant", 
+       x = "Participant ID", y = "Predicted Probability")
+
+# Interpretation of the Plot:
+  # The y-axis shows the predicted probability that the participant will choose DH (0 is no chance, 1 is certainty)
+  # The vertical spread of points indicates there is some variation among participants in their probability of choosing DH (i.e.) participants have different propensities for choosing DH. Our mixed-effects model accounts for the individual-level variation!
+  # Most predicted probabilities are below 0.5, indicating a general tendency away from choosing DH among participants.
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+### H1 (Main Effect) Analysis (replace this with description of H1)
+
+#### How does [main effect variable] influence [results]?
+
+```{r H1}
+
+## analysis and p-value of H1
+
+## graph of H1
+
+```
+
+### Exploratory Analysis (replace this with description)
+
+#### How does [exploratory variable] influence [results]?
+
+```{r Exploratory}
+
+## analysis and p-value
+
+## graph
+```
+
+
+
+### Power Analysis 
+
+```{r Power analysis}
+
+
+set.seed(2532)
+
+PowerModel = "" ##replace with main effect analysis
+
+## use this line to extend the number of trials
+PowerModelExt = extend(PowerModel, within = "participant_id+ratingType", n = 50)
+
+## use this line to extend the number of participants
+PowerModelExt = extend(PowerModelExt, along = "participant_id", n = 200)
+
+## run sim
+powerSim(PowerModelExt, nsim=1000)
+
+# model the curve of this hypothetical experiment
+pc <-  powerCurve(PowerModelExt, nsim = 1000, along = "participant_id") 
+
+# plot and numbers
+pc 
+plot(pc)
 
 ```
