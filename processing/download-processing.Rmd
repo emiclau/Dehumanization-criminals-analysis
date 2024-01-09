@@ -453,3 +453,28 @@ write.csv(full_data_widelong, "full_data_widelong.csv", row.names = FALSE)
 
 ```
 
+STEP 7. Merging Survey Data with Experimental Data - Long format 
+```{r integrating survey_data into experiment_data_long}
+
+# Convert 'Prolific_ID' to character in both datasets
+experiment_data_long$Prolific_ID <- as.character(experiment_data_long$Prolific_ID)
+survey_data$Prolific_ID <- as.character(survey_data$Prolific_ID)
+
+
+# Check if 'Prolific_ID' exists in both datasets and has the same data type
+if("Prolific_ID" %in% names(experiment_data_long) & "Prolific_ID" %in% names(survey_data)) {
+  if(class(experiment_data_long$Prolific_ID) == class(survey_data$Prolific_ID)) {
+
+    full_data_long <- merge(experiment_data_long, survey_data, by = "Prolific_ID", all.x = TRUE, all.y = TRUE)
+    
+  } else {
+    stop("Data types of 'Prolific_ID' in both datasets do not match.")
+  }
+} else {
+  stop("'Prolific_ID' column not found in one or both datasets.")
+}
+
+# Creating a new data frame (CSV file) with merged experimental and survey data
+write.csv(full_data_long, "full_data_long.csv", row.names = FALSE)
+
+```
