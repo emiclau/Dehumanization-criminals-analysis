@@ -30,7 +30,7 @@ pkgs <- c(
 pkgs_all <- c(pkgs)
 
 # Change out the date for today's date (unless you are running an old analysis)
-groundhog.library(pkgs_all, "2023-11-27")
+groundhog.library(pkgs_all, "2024-1-7")
 
 
 # Importing the data: 
@@ -42,7 +42,7 @@ library(ggplot2)
 
 # Exclude the last row with prompt descriptions for these descriptive analyses:
 full_data_widelong <- full_data_widelong[-nrow(full_data_widelong), ]
-view(full_data_widelong)
+
 ```
 
 
@@ -176,15 +176,16 @@ library(lme4)
 library(lmerTest) # For summaries including p-values
 
 # Loading the dataset
-experiment_data_long_test <- read.csv("~/Downloads/Dehumanization Project/experiment_data_long.csv")
+full_data_long_test <- read.csv("~/Downloads/Dehumanization Project/full_data_long.csv")
+
 
 # Preprocessing the data
-experiment_data_long_test <- subset(experiment_data_long_test, !is.na(trial)) # Remove phone and gender rows
-experiment_data_long_test <- subset(experiment_data_long_test, choice != 0) # Remove rows where 'choice' is 0
-experiment_data_long_test$choice <- ifelse(experiment_data_long_test$rating == "DH", 1, 0) # Convert 'choice' from DH/NDH to 1/0
+full_data_long_test <- subset(full_data_long_test, !is.na(trial)) # Remove phone and gender rows
+full_data_long_test <- subset(full_data_long_test, choice != 0) # Remove rows where 'choice' is 0
+full_data_long_test$choice <- ifelse(full_data_long_test$rating == "DH", 1, 0) # Convert 'choice' from DH/NDH to 1/0
 
 # Fit a mixed-effects logistic regression model. The (1 | Prolific_ID) adds a random effect for each participant.
-model <- glmer(choice ~ 1 + (1 | Prolific_ID), family = binomial, data = experiment_data_long_test)
+model <- glmer(choice ~ 1 + (1 | Prolific_ID), family = binomial, data = full_data_long_test)
 
 # View the summary of the model
 summary(model)
@@ -192,8 +193,8 @@ summary(model)
 
 # 1. Visual Summary: Individual differences in the choice patterns
 library(ggplot2) # Load necessary library
-experiment_data_long_test$choice <- as.numeric(experiment_data_long_test$rating == "DH") # Counting DH choices
-proportions <- aggregate(choice ~ Prolific_ID, data = experiment_data_long_test, mean) # Proportion of DH choices
+full_data_long_test$choice <- as.numeric(full_data_long_test$rating == "DH") # Counting DH choices
+proportions <- aggregate(choice ~ Prolific_ID, data = full_data_long_test, mean) # Proportion of DH choices
 ggplot(proportions, aes(x = Prolific_ID, y = choice)) + # Plotting
   geom_bar(stat = "identity") +
   theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
@@ -220,13 +221,14 @@ plot(residuals(model), main="Residuals Plot")
 
 # Interpretation of the Plot:
   # Clusters at two levels is expected in logistic regression. For many observations, the model's predictions are close to the actual values.
-  # No obvious pattern to the residuals, suggesting the model's variance is constant across different levels of prediction (homoscedasticity).
+ 
+ # No obvious pattern to the residuals, suggesting the model's variance is constant across different levels of prediction (homoscedasticity).
   # A few residuals with higher absolute values. Possibly outliars or the model didn't fit very well?
 
 
 # 4. Visualize the predicted probabilities of choosing DH for each participant.
-experiment_data_long_test$predicted_prob <- predict(model, type = "response")
-ggplot(experiment_data_long_test, aes(x = Prolific_ID, y = predicted_prob)) +
+full_data_long_test$predicted_prob <- predict(model, type = "response")
+ggplot(full_data_long_test, aes(x = Prolific_ID, y = predicted_prob)) +
   geom_jitter(width = 0.2, alpha = 0.5) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
   labs(title = "Predicted Probabilities of DH Choice per Participant", 
@@ -238,71 +240,380 @@ ggplot(experiment_data_long_test, aes(x = Prolific_ID, y = predicted_prob)) +
   # Most predicted probabilities are below 0.5, indicating a general tendency away from choosing DH among participants.
 
 
+```
+
+### Running Pearson correlations
+
+### We are interested in looking at the zero-order correlations between the "proportions" variable (indicating the proportion of DH responses selected out of the ten total trials) and the following: Current general affect, Current discrete emotions, Individual differences in support for moral exclusion, Political orientation of participants, Income, Age, and Gender.
+
+```{r Zero-order / Pearson correlations}
+
+# Merge proportions table with the full_data_long_test dataset
+install.packages("dplyr") # Installing required package
+library(dplyr)
+proportions <- proportions %>% # Renaming column in proportions
+  rename(proportion = choice) 
+full_data_long_test <- merge(full_data_long_test, proportions[, c("Prolific_ID", "proportion")], by = "Prolific_ID", all.x = TRUE)
+
+# Remove 'gender' and 'device' columns
+full_data_long_test <- subset(full_data_long_test, select = -c(gender, device))
+
+
+
+#  -----------------------------------------------------------------------------------------
+# 1. Current general affect 
+
+# Assumptions of Pearson's Correlation: 
+
+## a) Both variables are metric
+class(full_data_long_test$proportion) # Proportion is numeric. 
+class(full_data_long_test$Q2_1) # Affect is an integer.
+
+## b) Linear relationship between the two variables:
+library(ggplot2)
+ggplot(full_data_long_test, aes(x = Q2_1, y = proportion)) +
+    geom_point() +
+    geom_smooth(method = "lm", color = "blue") +
+    ggtitle("Scatter plot of Proportion by Q2_1")
+## Do not have a clear linear relationship!!
+
+## c) Normal distribution:
+library(ggplot2)
+hist(full_data_long_test$proportion, xlab = "proportion", main = "Histogram of proportion")
+hist(full_data_long_test$Q2_1, xlab = "Current General Affect", main = "Histogram of Current General Affect")
+## Also does not have a normal distribution!!
+        
+## Does not pass the assumption checks >> Not valid to calculate a Pearson's Correlation Coefficient.
+
+## Hypothetically, this would yield a correlation value of 0.08936236
+cor_test_Q2_1 <- cor.test(full_data_long_test$proportion, full_data_long_test$Q2_1, method = "pearson")
+print(cor_test_Q2_1)
+
+
+#  -----------------------------------------------------------------------------------------
+# 2. Current discrete emotions
+
+# Calculating Cronbach's alpha of variables for 'discrete emotions' (Q3):
+install.packages("psych") # Installing required package
+library(psych)
+full_data_long_test$Q3_1 <- as.numeric(as.character(full_data_long_test$Q3_1)) # Converting chr. to numeric
+full_data_long_test$Q3_2 <- as.numeric(as.character(full_data_long_test$Q3_2))
+full_data_long_test$Q3_3 <- as.numeric(as.character(full_data_long_test$Q3_3))
+full_data_long_test$Q3_4 <- as.numeric(as.character(full_data_long_test$Q3_4))
+full_data_long_test$Q3_5 <- as.numeric(as.character(full_data_long_test$Q3_5))
+full_data_long_test$Q3_6 <- as.numeric(as.character(full_data_long_test$Q3_6))
+q3items <- full_data_long_test[, c("Q3_1", "Q3_2", "Q3_3", "Q3_4", "Q3_5", "Q3_6")]
+summary(q3items)
+
+alpha_result <- psych::alpha(q3items)
+str(alpha_result)
+# Cronbach's Alpha (raw_alpha): 0.937 <- Well above the 0.8 threshold !
+
+# Create an average of the Q3 items: new column named "Q3_avg"
+full_data_long_test$Q3_avg <- rowMeans(full_data_long_test[, c("Q3_1", "Q3_2", "Q3_3", "Q3_4", "Q3_5", "Q3_6")], na.rm = TRUE)
+
+# Assumptions of Pearson's Correlation: 
+
+## a) Both variables are metric
+class(full_data_long_test$proportion) # Proportion is numeric. 
+class(full_data_long_test$Q3_avg) # Q3_Avg is numeric.
+
+## b) Linear relationship between the two variables:
+library(ggplot2)
+ggplot(full_data_long_test, aes(x = Q3_avg, y = proportion)) +
+    geom_point() +
+    geom_smooth(method = "lm", color = "blue") +
+    ggtitle("Scatter plot of Proportion by Current Discrete Emotions")
+## Do not have a clear linear relationship!!
+
+## c) Normal distribution:
+library(ggplot2)
+hist(full_data_long_test$proportion, xlab = "proportion", main = "Histogram of proportion")
+hist(full_data_long_test$Q3_avg, xlab = "Current Discrete Emotions", main = "Histogram of Current Discrete Emotions")
+## Variables do not have normal distributions!!
+        
+## Does not pass the assumption checks >> Not valid to calculate a Pearson's Correlation Coefficient.
+
+## Hypothetically, this would yield a correlation value of 0.003770348
+cor_test_Q3_avg <- cor.test(full_data_long_test$proportion, full_data_long_test$Q3_avg, method = "pearson")
+print(cor_test_Q3_avg)
+
+
+#  -----------------------------------------------------------------------------------------
+# 3. Individual differences in support for moral exclusion
+
+
+# Calculating Cronbach's alpha of variables for 'moral exclusion' (Q5):
+install.packages("psych") # Installing required package
+library(psych)
+full_data_long_test$Q5_1 <- as.numeric(as.character(full_data_long_test$Q5_1)) # Converting chr. to numeric
+full_data_long_test$Q5_2 <- as.numeric(as.character(full_data_long_test$Q5_2))
+full_data_long_test$Q5_3 <- as.numeric(as.character(full_data_long_test$Q5_3))
+full_data_long_test$Q5_4 <- as.numeric(as.character(full_data_long_test$Q5_4))
+full_data_long_test$Q5_5 <- as.numeric(as.character(full_data_long_test$Q5_5))
+full_data_long_test$Q5_6 <- as.numeric(as.character(full_data_long_test$Q5_6))
+full_data_long_test$Q5_7 <- as.numeric(as.character(full_data_long_test$Q5_7))
+q5items <- full_data_long_test[, c("Q5_1", "Q5_2", "Q5_3", "Q5_4", "Q5_5", "Q5_6", "Q5_7")]
+summary(q5items)
+
+alpha_result <- psych::alpha(q5items)
+str(alpha_result)
+# Cronbach's Alpha (raw_alpha): 0.955 <- Well above the 0.8 threshold !
+
+# Create an average of the Q5 items: new column named "Q5_avg"
+full_data_long_test$Q5_avg <- rowMeans(full_data_long_test[, c("Q5_1", "Q5_2", "Q5_3", "Q5_4", "Q5_5", "Q5_6", "Q5_7")], na.rm = TRUE)
+
+# Assumptions of Pearson's Correlation: 
+
+## a) Both variables are metric
+class(full_data_long_test$proportion) # Proportion is numeric. 
+class(full_data_long_test$Q5_avg) # Q5_Avg is numeric.
+
+## b) Linear relationship between the two variables:
+library(ggplot2)
+ggplot(full_data_long_test, aes(x = Q5_avg, y = proportion)) +
+    geom_point() +
+    geom_smooth(method = "lm", color = "blue") +
+    ggtitle("Scatter plot of Proportion by Support for Moral Exclusion")
+## Loosely linear relationship!!
+
+## c) Normal distribution:
+library(ggplot2)
+hist(full_data_long_test$proportion, xlab = "proportion", main = "Histogram of proportion")
+hist(full_data_long_test$Q5_avg, xlab = "Current Moral Exclusion", main = "Histogram of Individual Differences in Support for Moral Exclusion")
+## Variables do not have normal distributions!!
+        
+## Does not pass the assumption checks >> Not valid to calculate a Pearson's Correlation Coefficient.
+
+## Hypothetically, this would yield a correlation value of 0.2361316
+cor_test_Q5_avg <- cor.test(full_data_long_test$proportion, full_data_long_test$Q5_avg, method = "pearson")
+print(cor_test_Q5_avg)
+
+
+
+#  -----------------------------------------------------------------------------------------
+# 4. Political orientation of participants
+
+# Converting the 'Conservatism' variable into a numeric value, using the following scale:
+#1. Extremely Liberal
+#2. Liberal
+#3. Somewhat Liberal
+#4. Middle of the Road
+#5. Somewhat Conservative
+#6. Conservative
+#7. Extremely Conservative
+
+# Create Conservatism.no column with corresponding numerical values
+levels <- c("Extremely Liberal", "Liberal", "Somewhat Liberal",
+            "Middle of the Road", "Somewhat Conservative", 
+            "Conservative", "Extremely Conservative")
+numbers <- 1:7
+full_data_long_test$Conservatism.no <- match(full_data_long_test$Conservatism, levels) 
+
+
+# Assumptions of Pearson's Correlation: 
+
+## a) Both variables are metric
+class(full_data_long_test$proportion) # Proportion is numeric. 
+class(full_data_long_test$Conservatism.no) # Conservatism is an integer.
+
+## b) Linear relationship between the two variables:
+library(ggplot2)
+ggplot(full_data_long_test, aes(x = Conservatism.no, y = proportion)) +
+    geom_point() +
+    geom_smooth(method = "lm", color = "blue") +
+    ggtitle("Scatter plot of Proportion by Conservatism")
+## Do not have a clear linear relationship!!
+
+## c) Normal distribution:
+library(ggplot2)
+hist(full_data_long_test$proportion, xlab = "proportion", main = "Histogram of proportion")
+hist(full_data_long_test$Conservatism.no, xlab = "Conservatism", main = "Histogram of Conservatism")
+## Also does not have a normal distribution!!
+        
+## Does not pass the assumption checks >> Not valid to calculate a Pearson's Correlation Coefficient.
+
+## Hypothetically, this would yield a correlation value of 0.3901844
+cor_test_Conservatism <- cor.test(full_data_long_test$proportion, full_data_long_test$Conservatism.no, method = "pearson")
+print(cor_test_Conservatism)
+## A value of 0.39 would indicate a Low or Moderate Correlation
+
+  
+  #  -----------------------------------------------------------------------------------------
+# 4. Income 
+
+# Converting the 'Income' variable into a numeric value, using the following scale:
+#1. Less than $40,000
+#2. $40,000-$79,999
+#3. $80,000-$119,999
+#4. $120,000-$199,999
+#5. More than $200,000
+
+# Create Conservatism.no column with corresponding numerical values
+levels <- c("Less than $40,000", "$40,000-$79,999", "$80,000-$119,999",
+            "$120,000-$199,999", "More than $200,000")
+numbers <- 1:5
+full_data_long_test$Income.no <- match(full_data_long_test$Income, levels) 
+
+
+# Assumptions of Pearson's Correlation: 
+
+## a) Both variables are metric
+class(full_data_long_test$proportion) # Proportion is numeric. 
+class(full_data_long_test$Income.no) # Income is an integer.
+
+## b) Linear relationship between the two variables:
+library(ggplot2)
+ggplot(full_data_long_test, aes(x = Income.no, y = proportion)) +
+    geom_point() +
+    geom_smooth(method = "lm", color = "blue") +
+    ggtitle("Scatter plot of Proportion by Income")
+## Do not have a clear linear relationship!!
+
+## c) Normal distribution:
+library(ggplot2)
+hist(full_data_long_test$proportion, xlab = "proportion", main = "Histogram of proportion")
+hist(full_data_long_test$Income.no, xlab = "Income", main = "Histogram of Income")
+## Also does not have a normal distribution!!
+        
+## Does not pass the assumption checks >> Not valid to calculate a Pearson's Correlation Coefficient.
+
+## Hypothetically, this would yield a correlation value of 0.07293129 
+cor_test_Income <- cor.test(full_data_long_test$proportion, full_data_long_test$Income.no, method = "pearson")
+print(cor_test_Income)
+
+
+
+  #  -----------------------------------------------------------------------------------------
+# 5. Age 
+
+# Assumptions of Pearson's Correlation: 
+
+## a) Both variables are metric
+class(full_data_long_test$proportion) # Proportion is numeric. 
+class(full_data_long_test$Age) # Age is an integer.
+
+## b) Linear relationship between the two variables:
+library(ggplot2)
+ggplot(full_data_long_test, aes(x = Age, y = proportion)) +
+    geom_point() +
+    geom_smooth(method = "lm", color = "blue") +
+    ggtitle("Scatter plot of Proportion by Age")
+## Do not have a clear linear relationship!!
+
+## c) Normal distribution:
+library(ggplot2)
+hist(full_data_long_test$proportion, xlab = "proportion", main = "Histogram of proportion")
+hist(full_data_long_test$Income.no, xlab = "Age", main = "Histogram of Age")
+## Also does not have a normal distribution!!
+        
+## Does not pass the assumption checks >> Not valid to calculate a Pearson's Correlation Coefficient.
+
+## Hypothetically, this would yield a correlation value of 0.121015  
+cor_test_Age <- cor.test(full_data_long_test$proportion, full_data_long_test$Age, method = "pearson")
+print(cor_test_Age)
+
+
+
+
+  #  -----------------------------------------------------------------------------------------
+# 6. Gender 
+
+# Converting the 'Gender' variable into a binary value, using the following scale:
+#1. Female
+#2. Male
+#3. Other
+
+# Create Gender.no column with corresponding numerical values
+levels <- c("Female", "Male", "Other")
+numbers <- 1:3
+full_data_long_test$Gender.no <- match(full_data_long_test$Gender, levels) 
+
+
+# Assumptions of Pearson's Correlation: 
+
+## a) Both variables are metric
+class(full_data_long_test$proportion) # Proportion is numeric. 
+class(full_data_long_test$Gender.no) # Gender is an integer.
+
+## b) Linear relationship between the two variables:
+library(ggplot2)
+ggplot(full_data_long_test, aes(x = Gender.no, y = proportion)) +
+    geom_point() +
+    geom_smooth(method = "lm", color = "blue") +
+    ggtitle("Scatter plot of Proportion by Gender")
+## Do not have a clear linear relationship!!
+
+## c) Normal distribution:
+library(ggplot2)
+hist(full_data_long_test$proportion, xlab = "proportion", main = "Histogram of proportion")
+hist(full_data_long_test$Gender.no, xlab = "Gender", main = "Histogram of Gender")
+## Also does not have a normal distribution!!
+        
+## Does not pass the assumption checks >> Not valid to calculate a Pearson's Correlation Coefficient.
+
+## Hypothetically, this would yield a correlation value of 0.03082222 
+cor_test_Gender <- cor.test(full_data_long_test$proportion, full_data_long_test$Gender.no, method = "pearson")
+print(cor_test_Gender)
+
+
+# Saving this updated data frame, just in case.
+write.csv(full_data_long_test, "full_data_long_test.csv", row.names = FALSE)
+
 
 ```
 
+### Reaction times in choosing DH versus NDH statements -- Mixed Model
+
+### We are interested in comparing the reaction times in choosing dehumanizing vs. non-dehumanizing statements. Here, we want to run a mixed model similar to the previous one, regressing reaction time on a binary variable denoting a DH or NDH response, with participant treated as a random effect.
+
+```{r Reaction times}
+
+# Import dataset with 'rt' (reaction time)
+experiment_data <- read.csv("~/Downloads/Dehumanization Project/experiment_data.csv")
+
+# Importing the rt associated with trials into 'full_data_long_test' dataset
+library(dplyr)
+experiment_data_filtered <- experiment_data %>% 
+                            filter(trial >= 1 & trial <= 10)
+experiment_data_filtered <- experiment_data_filtered %>%
+                            rename(Prolific_ID = participant_id)
+experiment_data_filtered <- experiment_data_filtered %>% 
+                            select(Prolific_ID, trial, rt)
+full_data_long_test <- full_data_long_test %>%
+                       left_join(experiment_data_filtered, by = c("Prolific_ID", "trial"))
 
 
+### # Mixed-Effects Linear Regression Model
+
+library(lme4) # Load necessary library
+library(lmerTest) # For summaries including p-values
+
+# Converting 'rt' from chr string (in ms) to numeric (in s)
+full_data_long_test$rt <- as.numeric(full_data_long_test$rt) 
+sum(is.na(full_data_long_test$rt)) # Checking for any NAs
+full_data_long_test$rt_seconds <- full_data_long_test$rt / 1000 # Convert ms to s
+head(full_data_long_test$rt_seconds)
+
+# The 'choice' column has already been coded as 1 for DH and 0 for NDH (binary variable)
+# 'rt' is regressed on binary DH/NDH variable, with Prolific_ID as a random effect
+rtmodel <- lmer(rt_seconds ~ choice + (1 | Prolific_ID), 
+                            data = full_data_long_test)
+summary(rtmodel)
 
 
+[RUNNING INTO ISSUES WITH RT > NOT THE CORRECT ROWS IT SEEMS LIKE. NOT SURE WHICH RT ROWS FROM THE ORIGINAL DATA "EXPERIMENT_DATA" ARE THE ONES TO KEEP > ASK ALEX] 
 
 
-
-
-
-
-
-
-
-
-### H1 (Main Effect) Analysis (replace this with description of H1)
-
-#### How does [main effect variable] influence [results]?
-
-```{r H1}
-
-## analysis and p-value of H1
-
-## graph of H1
 
 ```
 
-### Exploratory Analysis (replace this with description)
+### Splitting the sample.
 
-#### How does [exploratory variable] influence [results]?
+### Here, we are splitting the sample between those who scored above and below the median on the "proportion" variable, and comparing their education, gender, and race of the subsamples.
 
-```{r Exploratory}
-
-## analysis and p-value
-
-## graph
-```
+```{r Split sample tests}
 
 
-
-### Power Analysis 
-
-```{r Power analysis}
-
-
-set.seed(2532)
-
-PowerModel = "" ##replace with main effect analysis
-
-## use this line to extend the number of trials
-PowerModelExt = extend(PowerModel, within = "participant_id+ratingType", n = 50)
-
-## use this line to extend the number of participants
-PowerModelExt = extend(PowerModelExt, along = "participant_id", n = 200)
-
-## run sim
-powerSim(PowerModelExt, nsim=1000)
-
-# model the curve of this hypothetical experiment
-pc <-  powerCurve(PowerModelExt, nsim = 1000, along = "participant_id") 
-
-# plot and numbers
-pc 
-plot(pc)
 
 ```
