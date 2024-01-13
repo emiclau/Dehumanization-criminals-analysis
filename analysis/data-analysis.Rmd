@@ -556,9 +556,52 @@ hist(full_data_long_test$Gender.no, xlab = "Gender", main = "Histogram of Gender
 cor_test_Gender <- cor.test(full_data_long_test$proportion, full_data_long_test$Gender.no, method = "pearson")
 print(cor_test_Gender)
 
-
 # Saving this updated data frame, just in case.
 write.csv(full_data_long_test, "full_data_long_test.csv", row.names = FALSE)
+
+#  -----------------------------------------------------------------------------------------
+# 7. Education
+
+# Converting the 'Education' variable into a numeric value, using the following scale:
+#1. High school/GED
+#2. Some college experience
+#3. 2-year college degree (A.A.)
+#4. 4-year college degree (BA/BS)
+#5. Graduate or Professional Degree (MA/ MBA/ MS/ PhD)
+
+# Create Education.no column with corresponding numerical values
+levels <- c("High school/GED", "Some college experience", "2-year college degree (A.A.)", "4-year college degree (BA/BS)", "Graduate or Professional Degree (MA/ MBA/ MS/ PhD)")
+numbers <- 1:5
+full_data_long_test$Education.no <- match(full_data_long_test$Education, levels) 
+
+
+# Assumptions of Pearson's Correlation: 
+
+## a) Both variables are metric
+class(full_data_long_test$proportion) # Proportion is numeric. 
+class(full_data_long_test$Education.no) # Education is an integer.
+
+## b) Linear relationship between the two variables:
+library(ggplot2)
+ggplot(full_data_long_test, aes(x = Education.no, y = proportion)) +
+    geom_point() +
+    geom_smooth(method = "lm", color = "blue") +
+    ggtitle("Scatter plot of Proportion by Education")
+## Do not have a clear linear relationship!!
+
+## c) Normal distribution:
+library(ggplot2)
+hist(full_data_long_test$proportion, xlab = "proportion", main = "Histogram of proportion")
+hist(full_data_long_test$Education.no, xlab = "Level of Education", main = "Histogram of Education Levels")
+## Also does not have a normal distribution!!
+        
+## Does not pass the assumption checks >> Not valid to calculate a Pearson's Correlation Coefficient.
+
+## Hypothetically, this would yield a correlation value of 0.08151178
+cor_test_Education <- cor.test(full_data_long_test$proportion, full_data_long_test$Education.no, method = "pearson")
+print(cor_test_Education)
+
+
 
 
 ```
@@ -574,12 +617,16 @@ experiment_data <- read.csv("~/Downloads/Dehumanization Project/experiment_data.
 
 # Importing the rt associated with trials into 'full_data_long_test' dataset
 library(dplyr)
+
+# Calculate the reaction time as the difference in time_elapsed between rows
+experiment_data$reaction_time <- c(0, diff(experiment_data$time_elapsed))
+
 experiment_data_filtered <- experiment_data %>% 
                             filter(trial >= 1 & trial <= 10)
 experiment_data_filtered <- experiment_data_filtered %>%
                             rename(Prolific_ID = participant_id)
 experiment_data_filtered <- experiment_data_filtered %>% 
-                            select(Prolific_ID, trial, rt)
+                            select(Prolific_ID, trial, reaction_time)
 full_data_long_test <- full_data_long_test %>%
                        left_join(experiment_data_filtered, by = c("Prolific_ID", "trial"))
 
@@ -590,21 +637,43 @@ library(lme4) # Load necessary library
 library(lmerTest) # For summaries including p-values
 
 # Converting 'rt' from chr string (in ms) to numeric (in s)
-full_data_long_test$rt <- as.numeric(full_data_long_test$rt) 
-sum(is.na(full_data_long_test$rt)) # Checking for any NAs
-full_data_long_test$rt_seconds <- full_data_long_test$rt / 1000 # Convert ms to s
-head(full_data_long_test$rt_seconds)
+full_data_long_test$reaction_time <- as.numeric(full_data_long_test$reaction_time) 
+sum(is.na(full_data_long_test$reaction_time)) # Checking for any NAs
+full_data_long_test$reaction_time_secs <- full_data_long_test$reaction_time / 1000 # Convert ms to s
+head(full_data_long_test$reaction_time_secs)
 
 # The 'choice' column has already been coded as 1 for DH and 0 for NDH (binary variable)
 # 'rt' is regressed on binary DH/NDH variable, with Prolific_ID as a random effect
-rtmodel <- lmer(rt_seconds ~ choice + (1 | Prolific_ID), 
+rtmodel <- lmer(reaction_time_secs ~ choice + (1 | Prolific_ID), 
                             data = full_data_long_test)
 summary(rtmodel)
 
+# Interpretation of the Plot:
+  # The very large residual (max of 21.3786) suggest an outlier. 
+  # I want to exclude these outliers from the dataset and fit a new model.
 
-[RUNNING INTO ISSUES WITH RT > NOT THE CORRECT ROWS IT SEEMS LIKE. NOT SURE WHICH RT ROWS FROM THE ORIGINAL DATA "EXPERIMENT_DATA" ARE THE ONES TO KEEP > ASK ALEX] 
 
-
+### # CORRECTED Mixed-Effects Linear Regression Model
+  # Here I'm defining an outlier as an observation with a residual more than 3 sd away from the mean.
+library(lme4)
+library(lmerTest)                     
+residuals_original <- residuals(rtmodel) # The residuals of the original model
+mean_residuals <- mean(residuals_original) # The mean and sd of the residuals
+sd_residuals <- sd(residuals_original)
+outliers <- abs(residuals_original - mean_residuals) > (3 * sd_residuals) # Identify outliers
+full_data_long_test <- full_data_long_test[!outliers, ] # Exclude outliers from the dataset
+rtmodel_no_outliers <- lmer(reaction_time_secs ~ choice + (1 | Prolific_ID), # Fit a new model
+                            data = full_data_long_test)
+summary(rtmodel_no_outliers)
+                   
+# Interpretation of plot:
+  # REML Criterion: 3308.5, compared to 5344.3 previously (indicating a better fit)
+  # Scaled Residuals: 9.9693, compared to 21.3786 previously (removing the outliers was effective)
+  # Random Effects: Significant individual variation in reaction times.
+  # Fixed Effects in choice: Choosing DH might be associated with a shorter reaction times than NDH, but not statistically significant.
+# Takeaways:
+  # Significant individual variability in reaction times among participants
+  # No statistically significant differences in reaction time between DH and NDH choices
 
 ```
 
@@ -614,6 +683,103 @@ summary(rtmodel)
 
 ```{r Split sample tests}
 
+library(dplyr)
+
+# Aggregate data to get one row per participant
+# Assuming 'Education', 'Gender', and 'Race' remain consistent for each participant across all rows
+full_data_split <- full_data_long_test %>%
+                    group_by(Prolific_ID) %>%
+                    summarize(proportion = mean(proportion, na.rm = TRUE),
+                              Education = first(Education),
+                              Gender = first(Gender),
+                              Race = first(Race))
+
+# Convert to factors
+full_data_split$Education <- factor(full_data_split$Education, levels = c("High school/GED", "Some college experience", "2-year college degree (A.A.)", "4-year college degree (BA/BS)", "Graduate or Professional Degree (MA/ MBA/ MS/ PhD)"))
+full_data_split$Gender <- factor(full_data_split$Gender)
+full_data_split$Race <- factor(full_data_split$Race)
+
+# Split the dataset based on the median of the 'proportion' variable
+median_proportion <- median(full_data_split$proportion, na.rm = TRUE)
+above_median <- full_data_split %>% filter(proportion > median_proportion)
+below_median <- full_data_split %>% filter(proportion <= median_proportion)
+
+# Combine the two subsets and create a new variable 'Group' to indicate the subgroup
+above_median$Group <- 'Above Median'
+below_median$Group <- 'Below Median'
+full_data_split <- rbind(above_median, below_median)
+
+
+# EDUCATION Analysis
+# Mann-Whitney U Test
+education_no <- as.numeric(full_data_split$Education)
+mann_whitney_education <- wilcox.test(education_no ~ Group, data = full_data_split)
+print(mann_whitney_education)
+# Interpretation: p-value = 0.45 > 0.05. Not statistically significant. 
+
+# Chi-Square Test of Independence
+education_table <- table(full_data_split$Group, full_data_split$Education)
+chi_square_education <- chisq.test(education_table)
+print(chi_square_education)
+# Interpretation: p-value = 0.4893 > 0.05. Not statistically significant. 
+
+
+# GENDER Analysis
+# Chi-Square Test of Independence
+gender_table <- table(full_data_split$Group, full_data_split$Gender)
+chi_square_gender <- chisq.test(gender_table)
+print(chi_square_gender)
+print(gender_table)
+# Interpretation: p-value = 0.4874 > 0.05. Not statistically significant. 
+
+
+# RACE Analysis
+# Chi-Square Test of Independence
+race_table <- table(full_data_split$Group, full_data_split$Race)
+chi_square_race <- chisq.test(race_table)
+print(chi_square_race)
+print(race_table)
+# Interpretation: p-value = 0.4331 > 0.05. Not statistically significant. 
+
+
+```
+
+
+
+### Probability over time.
+
+### In this next part, we want to investigate whether participants become more or less likely to choose dehumanizing (DH) responses as the trials progress. In other words, are participants more or less likely to choose DH responses as the trials progress?
+
+```{r Probability over time}
+
+library(dplyr)
+
+# Calculating the proportion of DH choices per trial
+proportion_dh_per_trial <- full_data_long_test %>%
+                           group_by(trial) %>%
+                           summarize(proportion_dh = mean(choice == 1, na.rm = TRUE))
+print(proportion_dh_per_trial)
+
+library(ggplot2)
+
+ggplot(proportion_dh_per_trial, aes(x = trial, y = proportion_dh)) +
+    geom_line() +
+    geom_point() +
+    labs(title = "Proportion of DH Choices Over Trials",
+         x = "Trial",
+         y = "Proportion of DH Choices") +
+    theme_minimal()
+
+# Linear regression to test for trend
+trend_analysis <- lm(proportion_dh ~ trial, data = proportion_dh_per_trial)
+summary(trend_analysis)
+
+
+# Interpretation: 
+  # Multiple R-squared (0.06976), meaning the trial number does not explain much of the variation in DH choices.
+  # However, the Negative Adjusted R-squared (-0.04652) suggests that the model is not a good fit. Don't know how to make it better.
+  # p-value = 0.4609 >> 0.05, indicating that the model is not statistically significant.
+# There is not a statistically significant trend in the proportion of DH choices over the trials :/
 
 
 ```
