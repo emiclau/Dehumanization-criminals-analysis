@@ -20,7 +20,7 @@ install.packages("remotes")
 if(!suppressWarnings(require(groundhog))){remotes::install_github('CredibilityLab/groundhog')}
 library("groundhog")
 
-# put all packages in and call groundhog
+# Put all packages in and call groundhog
 pkgs <- c(
     "aws.s3",
     "tidyverse"
@@ -28,7 +28,7 @@ pkgs <- c(
 
 pkgs_all <- c(pkgs)
 
-#Change out the date for today's date (unless you are running an old analysis)
+# Change out the date for today's date (unless you are running an old analysis)
 groundhog.library(pkgs_all, "2023-11-27")
 
 
@@ -98,7 +98,7 @@ names(experiment_data) # variables
 str(experiment_data)   # structure
 
 # Removing and renaming columns
-experiment_data <- experiment_data[ , !(names(experiment_data) %in% c('rt', 'view_history', 'internal_node_id','keep_remove','trial_type'))]
+experiment_data <- experiment_data[ , !(names(experiment_data) %in% c('rt', 'View_history', 'internal_node_id','keep_remove','trial_type'))]
 experiment_data <- experiment_data %>% 
                  rename(name = Name)
 experiment_data <- experiment_data %>% 
@@ -243,7 +243,6 @@ experiment_data <- experiment_data[c("Prolific_ID", "time_elapsed", "trial_index
 
 experiment_data_widelong <- experiment_data
 ## EXPERIMENTAL DATA IN IS WIDE-LONG FORMAT ##
-view(experiment_data_widelong)
 
 
 # Creating a new data frame (CSV file) with experiment data
@@ -334,7 +333,7 @@ STEP 5. Processing the survey data
 ```{r cleaning the survey data}
 setwd("~/Downloads/Dehumanization Project") # Confirming working directory to the folder containing data
 survey_data <- read.csv("~/Downloads/Dehumanization Project/surveydata.csv")
-view(survey_data)
+View(survey_data)
 
 # Removing, renaming, and reordering columns
 survey_data <- survey_data[ , !(names(survey_data) %in% c('Status', 'IPAddress', 'Progress','Finished','RecipientLastName','RecipientFirstName','RecipientEmail','ExternalReference','LocationLatitude','LocationLongitude','DistributionChannel','UserLanguage','StartDate','EndDate'))]
@@ -408,18 +407,16 @@ survey_data$Duration_in_sec <- as.numeric(survey_data$Duration_in_sec) # Duratio
 survey_data$Q2_1 <- as.numeric(survey_data$Q2_1) # Q2_1: chr to num
 survey_data$Age <- as.numeric(survey_data$Age) # Age: chr to num
 
-# Reviewing responses to the Image Difficulty Question
+# ReViewing responses to the Image Difficulty Question
 survey_data$Image_Difficulties2[survey_data$Image_Difficulties2 == ""] <- NA
 print(levels(survey_data$Image_Difficulties2))
 
-# Reviewing responses to the Image Difficulty Question
+# ReViewing responses to the Image Difficulty Question
 survey_data$Comments_Questions[survey_data$Comments_Questions == ""] <- NA
 survey_data$Comments_Questions <- as.character(survey_data$Comments_Questions)
 survey_data$Comments_Questions[survey_data$Comments_Questions %in% c("No", "None", "no", "No comments", "I have no comments. ")] <- NA
 survey_data$Comments_Questions <- factor(survey_data$Comments_Questions)
 print(levels(survey_data$Comments_Questions))
-  
-view(survey_data)
 
 
 ```
@@ -446,7 +443,7 @@ if("Prolific_ID" %in% names(experiment_data_widelong) & "Prolific_ID" %in% names
   stop("'Prolific_ID' column not found in one or both datasets.")
 }
 
-view(full_data_widelong)
+View(full_data_widelong)
 
 # Creating a new data frame (CSV file) with merged experimental and survey data
 write.csv(full_data_widelong, "full_data_widelong.csv", row.names = FALSE)
