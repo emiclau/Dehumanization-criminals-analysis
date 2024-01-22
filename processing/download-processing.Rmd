@@ -1,21 +1,20 @@
 ---
-title: "Dehumanization Project Data Analysis"
+title: "Dehumanization Project Data Processing"
 output: html_notebook
 ---
 
 The R Version used to create this file is: `R version 4.3.2 (2023-10-31)`. 
 To reproduce analysis, switch with your own version of R by pressing `Tools` > `Global Options` > `R Version`
 
-Goal of the logistical regression: We would like to determine whether the agents expressing dehumanizing 
-reactions are selected more frequently than those expressing non-dehumanizing reactions.
 
+STEP 1. Installing groundhog and downloading packages. Not visible in output document.
 
-### Installing and downloading packages and preparing for analysis
-```{r Download packages and format csv to prepare for analysis}
-
+```{r libraries setup, include = FALSE}
 knitr::opts_knit$set(root.dir = '/Users/elizabethmiclau/Downloads/Dehumanization Project')
 
+
 # Change out the working directory for your own
+
 
 install.packages("remotes")
 if(!suppressWarnings(require(groundhog))){remotes::install_github('CredibilityLab/groundhog')}
@@ -30,822 +29,449 @@ pkgs <- c(
 pkgs_all <- c(pkgs)
 
 # Change out the date for today's date (unless you are running an old analysis)
-groundhog.library(pkgs_all, "2024-1-7")
+groundhog.library(pkgs_all, "2023-11-27")
 
-# Importing the data: 
-full_data_widelong <- read.csv("~/Downloads/Dehumanization Project/full_data_widelong.csv")
 
-# Necessary libraries
+```
+
+STEP 2. Filtering files by size to figure out which data files are incomplete and move the incomplete ones into a newly created "did not finish" folder.
+
+```{r downloading data and examining file sizes}
 library(dplyr)
 library(ggplot2)
+library(purrr)
+library(stringr)
+library(readr)
+library(fs)
 
-# Exclude the last row with prompt descriptions for these descriptive analyses:
-full_data_widelong <- full_data_widelong[-nrow(full_data_widelong), ]
-
-```
-
-
-### Participant Demographics - 
-```{r Number of Participants}
-
-# Number of Participants
-unique_participants <- full_data_widelong %>% distinct(Prolific_ID, .keep_all = TRUE) # Filtering unique participants based on Prolific_ID
-num_participants <- nrow(unique_participants) # Count unique participants
-print(paste("Number of Participants:", num_participants))
-
-```
- 
-```{r Gender Distribution of Participants}
-
-# Gender Distribution
-gender_stats <- table(unique_participants$Gender)
-print(gender_stats)
-
-```
-
-```{r Age Distribution of Participants}
-
-age_stats <- summary(unique_participants$Age)
-print(age_stats)
-ggplot(unique_participants, aes(x=Age)) + 
-  geom_histogram(binwidth=1, fill="blue", color="black") +
-  scale_x_continuous(breaks=seq(10, 80, by=10), limits=c(10, 80)) +
-  ylim(0, 5) +
-  labs(title="Age Distribution of Unique Participants", x="Age", y="Count") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-```
-
-```{r Race Distribution of Participants}
-
-# Race Distribution
-race_stats <- table(unique_participants$Race)
-print(race_stats)
-ggplot(unique_participants, aes(x=Race, fill=Race)) +
-  geom_bar() +
-  labs(title="Race Distribution of Participants", x="Race", y="Count") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-```
-
-```{r Income Distribution of Participants}
-
-# Income Distribution
-income_ordered <- c("Less than $40,000", "$40,000-$79,999", "$80,000-$119,999", "$120,000-$199,999", "More than $200,000")
-unique_participants$Income <- factor(unique_participants$Income, levels = income_ordered)
-income_stats <- table(unique_participants$Income)
-print(income_stats)
-ggplot(unique_participants, aes(x=Income, fill=Income)) +
-  geom_bar() +
-  labs(title="Income Distribution of Participants", x="Income", y="Count") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-```
-
-```{r Conservatism Distribution of Participants}
-
-# Conservatism Distribution
-conservatism_ordered <- c("Extremely Liberal", "Liberal", "Somewhat Liberal", "Middle of the Road", "Somewhat Conservative", "Conservative", "Extremely Conservative")
-unique_participants$Conservatism <- factor(unique_participants$Conservatism, levels = conservatism_ordered)
-conservatism_stats <- table(unique_participants$Conservatism)
-print(conservatism_stats)
-ggplot(unique_participants, aes(x=Conservatism, fill=Conservatism)) +
-  geom_bar() +
-  labs(title="Conservatism Distribution of Participants", x="Conservatism", y="Count") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-```
-
-```{r Education Distribution of Participants}
-
-# Education Distribution
-education_ordered <- c("High school/GED", "Some college experience", "2-year college degree (A.A.)", "4-year college degree (BA/BS)", "Graduate or Professional Degree (MA/ MBA/ MS/ PhD)")
-unique_participants$Education <- factor(unique_participants$Education, levels = education_ordered)
-education_stats <- table(unique_participants$Education)
-print(education_stats)
-ggplot(unique_participants, aes(x=Education, fill=Education)) +
-  geom_bar() +
-  labs(title="Education Distribution of Participants", x="Education", y="Count") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-```
+# To run this code. you need to change the working directory (wd) for your computer. In this new wd, you need to have:
+  # 1. A folder named 'data' with 54 participants' csv files (only keep the 54 files with long strings of letters/numbers0
+  # 2. Downloaded survey data from Qualtrics, saved as a file named: surveydata.csv
 
 
-### Running a Binomial Test
+setwd("~/Downloads/Dehumanization Project") # Confirming working directory to the folder containing data
+data_folder <- '/Users/elizabethmiclau/Downloads/Dehumanization Project/data'
+raw_files <- file.info(dir_ls(path = data_folder, regexp = "\\.csv$"))
+raw_files$filename <- rownames(raw_files)  # Add a column with file paths
 
-#### In our study, we aim to determine whether participants exhibit a preference for selecting agents that express a dehumanizing reaction (DH) over those that express a non-dehumanizing reaction (NDH), beyond what would be expected by mere chance. To evaluate this, we have chosen to conduct a Binomial Test.
+# Adding a column for file size in kilobytes
+raw_files$size_kb <- raw_files$size / 1024
 
-```{r Binomial Test }
+# Plotting file sizes to visually inspect for a cutoff point
+ggplot(raw_files, aes(x = size_kb)) +
+  geom_histogram(color = "black", bins = 30) +
+  labs(title = "Histogram of File Sizes", x = "File Size (KB)", y = "Frequency")
 
-# Loading the dataset
-full_data_widelong <- read.csv("~/Downloads/Dehumanization Project/full_data_widelong.csv")
+# Define your file size criteria for incomplete (in KB)
+size_criteria_kb <- 6.7
 
-# Check unique values in 'choice' column to ensure it's binary
-full_data_widelong$choice <- factor(full_data_widelong$choice)
-unique(full_data_widelong$choice)
+# Define and create the "did not finish" folder
+incomplete_folder <- paste0(data_folder, "/did_not_finish")
+dir.create(incomplete_folder, recursive = TRUE, showWarnings = FALSE)
 
-# Count the number of DH choices
-num_DH_choices <- sum(as.character(full_data_widelong$choice) == "DH", na.rm = TRUE)
-num_DH_choices <- as.integer(num_DH_choices)
-total_choices <- sum(!is.na(full_data_widelong$choice))
+# Find files smaller than the size criteria and move them
+small_files <- raw_files$filename[raw_files$size_kb < size_criteria_kb]
+for (file in small_files) {
+  file.rename(from = file, to = file.path(incomplete_folder, basename(file)))
+}
 
-# Perform the Binomial Test
-binomial_test <- binom.test(x = num_DH_choices, n = total_choices, p = 0.5)
-print(binomial_test)
+# Path to remaining CSV files
+csv_files <- dir_ls(path = data_folder, regexp = "\\.csv$") 
 
-# Interpreting the results of the Binomial Test:
-# The p-value of < 2.2e-16 indicates that the choice of DH is significantly different from chance.
+# Combine the remaining CSV files into one data frame
+experiment_data <- map_dfr(csv_files, ~read_csv(.x, show_col_types = FALSE))
 
-```
-
-### Running a Mixed-effects Model
-
-#### This new approach provides insights into the variability of choices between "DH" and "NDH" across participants, accounting for the fact that multiple choices come from the same participant.
-
-```{r Nested Data - Mixed-effects Model}
-
-install.packages("lme4")
-install.packages("lmerTest")
-library(lme4)
-library(lmerTest) # For summaries including p-values
-
-# Loading the dataset
-full_data_long_test <- read.csv("~/Downloads/Dehumanization Project/full_data_long.csv")
-
-
-# Preprocessing the data
-full_data_long_test <- subset(full_data_long_test, !is.na(trial)) # Remove phone and gender rows
-full_data_long_test <- subset(full_data_long_test, choice != 0) # Remove rows where 'choice' is 0
-full_data_long_test$choice <- ifelse(full_data_long_test$rating == "DH", 1, 0) # Convert 'choice' from DH/NDH to 1/0
-
-# Fit a mixed-effects logistic regression model. The (1 | Prolific_ID) adds a random effect for each participant.
-model <- glmer(choice ~ 1 + (1 | Prolific_ID), family = binomial, data = full_data_long_test)
-
-# View the summary of the model
-summary(model)
-
-
-# 1. Visual Summary: Individual differences in the choice patterns
-library(ggplot2) # Load necessary library
-full_data_long_test$choice <- as.numeric(full_data_long_test$rating == "DH") # Counting DH choices
-proportions <- aggregate(choice ~ Prolific_ID, data = full_data_long_test, mean) # Proportion of DH choices
-ggplot(proportions, aes(x = Prolific_ID, y = choice)) + # Plotting
-  geom_bar(stat = "identity") +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Proportion of DH Choices per Participant", x = "Participant ID", y = "Proportion of DH Choices")
-
-# Interpretation of the Output:
-  # AIC/BIC (Akaike and Bayesian Information Criterion): These values are useful for comparing different models fit to this data to see if they provide a better balance of goodness of fit and simplicity. If this is the only model you are considering, then the AIC and BIC give you a baseline for comparison if you decide to add more predictors or make other adjustments to your model.
-  # Random Effects: Tell us much variability there is in the choices among different participants. For us, the random effect of Prolific_ID shows some level of variability across participants.
-  # Fixed Effects: The fixed effect is the intercept; Tells us the log odds of choosing DH (versus NDH) when all other variables are held at zero.
-  # The z-value and p-value (Pr(>|z|)) for the intercept test whether it is significantly different from zero. A significant intercept in a model with no other predictors suggests that there is an overall tendency towards one choice over the other in the population. So, since ours is negative and is statistically significant, this suggests that the overall tendency is towards choosing NDH over DH.
-
-
-# 2. Visualize Random Effects: How participant-level intercepts vary around the overall intercept
-library(lattice) # Load necessary library
-ranef_plot <- dotplot(ranef(model, condVar = TRUE)) # Extract and plot random effects
-print(ranef_plot)
-
-# Interpretation of the Plot:
-  # Fair amount of variability among participants, with some showing a much higher or lower tendency to choose DH compared to the average (the vertical line at x=0). The intercept for some participants is significantly different from zero, which reinforces the appropriateness of using a mixed-effects model for your data since it accounts for this individual variability.
-
-
-# 3. Visualize the residuals of our mixed-effects model
-plot(residuals(model), main="Residuals Plot")
-
-# Interpretation of the Plot:
-  # Clusters at two levels is expected in logistic regression. For many observations, the model's predictions are close to the actual values.
- 
- # No obvious pattern to the residuals, suggesting the model's variance is constant across different levels of prediction (homoscedasticity).
-  # A few residuals with higher absolute values. Possibly outliars or the model didn't fit very well?
-
-
-# 4. Visualize the predicted probabilities of choosing DH for each participant.
-full_data_long_test$predicted_prob <- predict(model, type = "response")
-ggplot(full_data_long_test, aes(x = Prolific_ID, y = predicted_prob)) +
-  geom_jitter(width = 0.2, alpha = 0.5) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Predicted Probabilities of DH Choice per Participant", 
-       x = "Participant ID", y = "Predicted Probability")
-
-# Interpretation of the Plot:
-  # The y-axis shows the predicted probability that the participant will choose DH (0 is no chance, 1 is certainty)
-  # The vertical spread of points indicates there is some variation among participants in their probability of choosing DH (i.e.) participants have different propensities for choosing DH. Our mixed-effects model accounts for the individual-level variation!
-  # Most predicted probabilities are below 0.5, indicating a general tendency away from choosing DH among participants.
+# Creating a new data frame (CSV file) with experiment data
+write.csv(experiment_data, "experiment_data.csv", row.names = FALSE)
 
 
 ```
 
-### Running Pearson correlations
 
-### We are interested in looking at the zero-order correlations between the "proportions" variable (indicating the proportion of DH responses selected out of the ten total trials) and the following: Current general affect, Current discrete emotions, Individual differences in support for moral exclusion, Conservatism, Income, Age, and Gender.
-
-```{r Zero-order / Pearson correlations}
-
-# Merge proportions table with the full_data_long_test dataset
-install.packages("dplyr") # Installing required package
-library(dplyr)
-proportions <- proportions %>% # Renaming column in proportions
-  rename(proportion = choice) 
-full_data_long_test <- merge(full_data_long_test, proportions[, c("Prolific_ID", "proportion")], by = "Prolific_ID", all.x = TRUE)
-
-# Remove 'gender' and 'device' columns
-full_data_long_test <- subset(full_data_long_test, select = -c(gender, device))
-
-
-
-#  -----------------------------------------------------------------------------------------
-# 1. Current general affect 
-
-# Assumptions of Pearson's Correlation: 
-
-## a) Both variables are metric
-class(full_data_long_test$proportion) # Proportion is numeric. 
-class(full_data_long_test$Q2_1) # Affect is an integer.
-
-## b) Linear relationship between the two variables:
-library(ggplot2)
-ggplot(full_data_long_test, aes(x = Q2_1, y = proportion)) +
-    geom_point() +
-    geom_smooth(method = "lm", color = "blue") +
-    ggtitle("Scatter plot of Proportion by Q2_1")
-## Do not have a clear linear relationship!!
-
-## c) Normal distribution:
-library(ggplot2)
-hist(full_data_long_test$proportion, xlab = "proportion", main = "Histogram of proportion")
-hist(full_data_long_test$Q2_1, xlab = "Current General Affect", main = "Histogram of Current General Affect")
-## Also does not have a normal distribution!!
-        
-## Does not pass the assumption checks >> Not valid to calculate a Pearson's Correlation Coefficient.
-
-## Hypothetically, this would yield a correlation value of 0.08936236
-cor_test_Q2_1 <- cor.test(full_data_long_test$proportion, full_data_long_test$Q2_1, method = "pearson")
-print(cor_test_Q2_1)
-
-
-#  -----------------------------------------------------------------------------------------
-# 2. Current discrete emotions
-
-# Calculating Cronbach's alpha of variables for 'discrete emotions' (Q3):
-install.packages("psych") # Installing required package
-library(psych)
-full_data_long_test$Q3_1 <- as.numeric(as.character(full_data_long_test$Q3_1)) # Converting chr. to numeric
-full_data_long_test$Q3_2 <- as.numeric(as.character(full_data_long_test$Q3_2))
-full_data_long_test$Q3_3 <- as.numeric(as.character(full_data_long_test$Q3_3))
-full_data_long_test$Q3_4 <- as.numeric(as.character(full_data_long_test$Q3_4))
-full_data_long_test$Q3_5 <- as.numeric(as.character(full_data_long_test$Q3_5))
-full_data_long_test$Q3_6 <- as.numeric(as.character(full_data_long_test$Q3_6))
-q3items <- full_data_long_test[, c("Q3_1", "Q3_2", "Q3_3", "Q3_4", "Q3_5", "Q3_6")]
-summary(q3items)
-
-alpha_result <- psych::alpha(q3items)
-str(alpha_result)
-# Cronbach's Alpha (raw_alpha): 0.937 <- Well above the 0.8 threshold !
-
-# Create an average of the Q3 items: new column named "Q3_avg"
-full_data_long_test$Q3_avg <- rowMeans(full_data_long_test[, c("Q3_1", "Q3_2", "Q3_3", "Q3_4", "Q3_5", "Q3_6")], na.rm = TRUE)
-
-# Assumptions of Pearson's Correlation: 
-
-## a) Both variables are metric
-class(full_data_long_test$proportion) # Proportion is numeric. 
-class(full_data_long_test$Q3_avg) # Q3_Avg is numeric.
-
-## b) Linear relationship between the two variables:
-library(ggplot2)
-ggplot(full_data_long_test, aes(x = Q3_avg, y = proportion)) +
-    geom_point() +
-    geom_smooth(method = "lm", color = "blue") +
-    ggtitle("Scatter plot of Proportion by Current Discrete Emotions")
-## Do not have a clear linear relationship!!
-
-## c) Normal distribution:
-library(ggplot2)
-hist(full_data_long_test$proportion, xlab = "proportion", main = "Histogram of proportion")
-hist(full_data_long_test$Q3_avg, xlab = "Current Discrete Emotions", main = "Histogram of Current Discrete Emotions")
-## Variables do not have normal distributions!!
-        
-## Does not pass the assumption checks >> Not valid to calculate a Pearson's Correlation Coefficient.
-
-## Hypothetically, this would yield a correlation value of 0.003770348
-cor_test_Q3_avg <- cor.test(full_data_long_test$proportion, full_data_long_test$Q3_avg, method = "pearson")
-print(cor_test_Q3_avg)
-
-
-#  -----------------------------------------------------------------------------------------
-# 3. Individual differences in support for moral exclusion
-
-
-# Calculating Cronbach's alpha of variables for 'moral exclusion' (Q5):
-install.packages("psych") # Installing required package
-library(psych)
-full_data_long_test$Q5_1 <- as.numeric(as.character(full_data_long_test$Q5_1)) # Converting chr. to numeric
-full_data_long_test$Q5_2 <- as.numeric(as.character(full_data_long_test$Q5_2))
-full_data_long_test$Q5_3 <- as.numeric(as.character(full_data_long_test$Q5_3))
-full_data_long_test$Q5_4 <- as.numeric(as.character(full_data_long_test$Q5_4))
-full_data_long_test$Q5_5 <- as.numeric(as.character(full_data_long_test$Q5_5))
-full_data_long_test$Q5_6 <- as.numeric(as.character(full_data_long_test$Q5_6))
-full_data_long_test$Q5_7 <- as.numeric(as.character(full_data_long_test$Q5_7))
-q5items <- full_data_long_test[, c("Q5_1", "Q5_2", "Q5_3", "Q5_4", "Q5_5", "Q5_6", "Q5_7")]
-summary(q5items)
-
-alpha_result <- psych::alpha(q5items)
-str(alpha_result)
-# Cronbach's Alpha (raw_alpha): 0.955 <- Well above the 0.8 threshold !
-
-# Create an average of the Q5 items: new column named "Q5_avg"
-full_data_long_test$Q5_avg <- rowMeans(full_data_long_test[, c("Q5_1", "Q5_2", "Q5_3", "Q5_4", "Q5_5", "Q5_6", "Q5_7")], na.rm = TRUE)
-
-# Assumptions of Pearson's Correlation: 
-
-## a) Both variables are metric
-class(full_data_long_test$proportion) # Proportion is numeric. 
-class(full_data_long_test$Q5_avg) # Q5_Avg is numeric.
-
-## b) Linear relationship between the two variables:
-library(ggplot2)
-ggplot(full_data_long_test, aes(x = Q5_avg, y = proportion)) +
-    geom_point() +
-    geom_smooth(method = "lm", color = "blue") +
-    ggtitle("Scatter plot of Proportion by Support for Moral Exclusion")
-## Loosely linear relationship!!
-
-## c) Normal distribution:
-library(ggplot2)
-hist(full_data_long_test$proportion, xlab = "proportion", main = "Histogram of proportion")
-hist(full_data_long_test$Q5_avg, xlab = "Current Moral Exclusion", main = "Histogram of Individual Differences in Support for Moral Exclusion")
-## Variables do not have normal distributions!!
-        
-## Does not pass the assumption checks >> Not valid to calculate a Pearson's Correlation Coefficient.
-
-## Hypothetically, this would yield a correlation value of 0.24
-cor_test_Q5_avg <- cor.test(full_data_long_test$proportion, full_data_long_test$Q5_avg, method = "pearson")
-print(cor_test_Q5_avg)
-
-
-## Given that the assumptions for Pearson's correlation were not met (e.g., non-normal distributions, ordinal data, and non-linear relationships), we can instead run Spearman's rho correlation (a non-parametric measure of rank correlation).
-spearman_moral <- cor.test(full_data_long_test$proportion, full_data_long_test$Q5_avg, method = "spearman")
-print(spearman_moral)
-
-# Interpretation
-  # The correlation coefficient rho is 0.31, indicating a positive correlation between the proportion of DH choices and the average Q5 score (support for moral exclusion). 
-  # The p-value is 5.902e-13 (< 0.05) indicating a statistically significant monotonic relationship between the two variables.
-  # We can conclude that there is a significant monotonic relationship between the proportion of DH choices and support for moral exclusion. 
-  # The warning "Cannot compute exact p-value with ties" is supposedly common with Spearman's correlation when the data have many tied ranks.
-# This result implies that individuals who are more supportive of moral exclusion are also more likely to choose dehumanizing responses.
-
-
-
-#  -----------------------------------------------------------------------------------------
-# 4. Political orientation of participants
-
-# Converting the 'Conservatism' variable into a numeric value, using the following scale:
-#1. Extremely Liberal
-#2. Liberal
-#3. Somewhat Liberal
-#4. Middle of the Road
-#5. Somewhat Conservative
-#6. Conservative
-#7. Extremely Conservative
-
-# Create Conservatism.no column with corresponding numerical values
-levels <- c("Extremely Liberal", "Liberal", "Somewhat Liberal",
-            "Middle of the Road", "Somewhat Conservative", 
-            "Conservative", "Extremely Conservative")
-numbers <- 1:7
-full_data_long_test$Conservatism.no <- match(full_data_long_test$Conservatism, levels) 
-
-
-# Assumptions of Pearson's Correlation: 
-
-## a) Both variables are metric
-class(full_data_long_test$proportion) # Proportion is numeric. 
-class(full_data_long_test$Conservatism.no) # Conservatism is an integer.
-
-## b) Linear relationship between the two variables:
-library(ggplot2)
-ggplot(full_data_long_test, aes(x = Conservatism.no, y = proportion)) +
-    geom_point() +
-    geom_smooth(method = "lm", color = "blue") +
-    ggtitle("Scatter plot of Proportion by Conservatism")
-## Do not have a clear linear relationship!!
-
-## c) Normal distribution:
-library(ggplot2)
-hist(full_data_long_test$proportion, xlab = "proportion", main = "Histogram of proportion")
-hist(full_data_long_test$Conservatism.no, xlab = "Conservatism", main = "Histogram of Conservatism")
-## Also does not have a normal distribution!!
-        
-## Does not pass the assumption checks >> Not valid to calculate a Pearson's Correlation Coefficient.
-
-## Hypothetically, this would yield a correlation value of 0.3901844
-cor_test_Conservatism <- cor.test(full_data_long_test$proportion, full_data_long_test$Conservatism.no, method = "pearson")
-print(cor_test_Conservatism)
-## A value of 0.39 would indicate a Low or Moderate Correlation
-
-  
-
-## Given that the assumptions for Pearson's correlation were not met (e.g., non-normal distributions, ordinal data, and non-linear relationships), we can instead run Spearman's rho correlation (a non-parametric measure of rank correlation).
-spearman_conservatism <- cor.test(full_data_long_test$proportion, full_data_long_test$Conservatism.no, method = "spearman")
-print(spearman_conservatism)
-
-# Interpretation
-  # The correlation coefficient rho is 0.34, indicating a positive correlation between the proportion of DH choices and political conservatism. 
-  # The p-value is 9.511e-15 (< 0.05) indicating a statistically significant monotonic relationship between the two variables.
-  # We can conclude that there is a significant monotonic relationship between the proportion of DH choices and level of conservatism. 
-  # The warning "Cannot compute exact p-value with ties" is supposedly common with Spearman's correlation when the data have many tied ranks.
-# Participants with higher conservatism scores tend to choose DH responses more frequently than those with lower conservatism scores
-
-
-
-  #  -----------------------------------------------------------------------------------------
-# 4. Income 
-
-# Converting the 'Income' variable into a numeric value, using the following scale:
-#1. Less than $40,000
-#2. $40,000-$79,999
-#3. $80,000-$119,999
-#4. $120,000-$199,999
-#5. More than $200,000
-
-# Create Conservatism.no column with corresponding numerical values
-levels <- c("Less than $40,000", "$40,000-$79,999", "$80,000-$119,999",
-            "$120,000-$199,999", "More than $200,000")
-numbers <- 1:5
-full_data_long_test$Income.no <- match(full_data_long_test$Income, levels) 
-
-
-# Assumptions of Pearson's Correlation: 
-
-## a) Both variables are metric
-class(full_data_long_test$proportion) # Proportion is numeric. 
-class(full_data_long_test$Income.no) # Income is an integer.
-
-## b) Linear relationship between the two variables:
-library(ggplot2)
-ggplot(full_data_long_test, aes(x = Income.no, y = proportion)) +
-    geom_point() +
-    geom_smooth(method = "lm", color = "blue") +
-    ggtitle("Scatter plot of Proportion by Income")
-## Do not have a clear linear relationship!!
-
-## c) Normal distribution:
-library(ggplot2)
-hist(full_data_long_test$proportion, xlab = "proportion", main = "Histogram of proportion")
-hist(full_data_long_test$Income.no, xlab = "Income", main = "Histogram of Income")
-## Also does not have a normal distribution!!
-        
-## Does not pass the assumption checks >> Not valid to calculate a Pearson's Correlation Coefficient.
-
-## Hypothetically, this would yield a correlation value of 0.07293129 
-cor_test_Income <- cor.test(full_data_long_test$proportion, full_data_long_test$Income.no, method = "pearson")
-print(cor_test_Income)
-
-
-
-  #  -----------------------------------------------------------------------------------------
-# 5. Age 
-
-# Assumptions of Pearson's Correlation: 
-
-## a) Both variables are metric
-class(full_data_long_test$proportion) # Proportion is numeric. 
-class(full_data_long_test$Age) # Age is an integer.
-
-## b) Linear relationship between the two variables:
-library(ggplot2)
-ggplot(full_data_long_test, aes(x = Age, y = proportion)) +
-    geom_point() +
-    geom_smooth(method = "lm", color = "blue") +
-    ggtitle("Scatter plot of Proportion by Age")
-## Do not have a clear linear relationship!!
-
-## c) Normal distribution:
-library(ggplot2)
-hist(full_data_long_test$proportion, xlab = "proportion", main = "Histogram of proportion")
-hist(full_data_long_test$Income.no, xlab = "Age", main = "Histogram of Age")
-## Also does not have a normal distribution!!
-        
-## Does not pass the assumption checks >> Not valid to calculate a Pearson's Correlation Coefficient.
-
-## Hypothetically, this would yield a correlation value of 0.121015  
-cor_test_Age <- cor.test(full_data_long_test$proportion, full_data_long_test$Age, method = "pearson")
-print(cor_test_Age)
-
-
-
-
-  #  -----------------------------------------------------------------------------------------
-# 6. Gender 
-
-# Converting the 'Gender' variable into a binary value, using the following scale:
-#1. Female
-#2. Male
-#3. Other
-
-# Create Gender.no column with corresponding numerical values
-levels <- c("Female", "Male", "Other")
-numbers <- 1:3
-full_data_long_test$Gender.no <- match(full_data_long_test$Gender, levels) 
-
-
-# Assumptions of Pearson's Correlation: 
-
-## a) Both variables are metric
-class(full_data_long_test$proportion) # Proportion is numeric. 
-class(full_data_long_test$Gender.no) # Gender is an integer.
-
-## b) Linear relationship between the two variables:
-library(ggplot2)
-ggplot(full_data_long_test, aes(x = Gender.no, y = proportion)) +
-    geom_point() +
-    geom_smooth(method = "lm", color = "blue") +
-    ggtitle("Scatter plot of Proportion by Gender")
-## Do not have a clear linear relationship!!
-
-## c) Normal distribution:
-library(ggplot2)
-hist(full_data_long_test$proportion, xlab = "proportion", main = "Histogram of proportion")
-hist(full_data_long_test$Gender.no, xlab = "Gender", main = "Histogram of Gender")
-## Also does not have a normal distribution!!
-        
-## Does not pass the assumption checks >> Not valid to calculate a Pearson's Correlation Coefficient.
-
-## Hypothetically, this would yield a correlation value of 0.03082222 
-cor_test_Gender <- cor.test(full_data_long_test$proportion, full_data_long_test$Gender.no, method = "pearson")
-print(cor_test_Gender)
-
-# Saving this updated data frame, just in case.
-write.csv(full_data_long_test, "full_data_long_test.csv", row.names = FALSE)
-
-#  -----------------------------------------------------------------------------------------
-# 7. Education
-
-# Converting the 'Education' variable into a numeric value, using the following scale:
-#1. High school/GED
-#2. Some college experience
-#3. 2-year college degree (A.A.)
-#4. 4-year college degree (BA/BS)
-#5. Graduate or Professional Degree (MA/ MBA/ MS/ PhD)
-
-# Create Education.no column with corresponding numerical values
-levels <- c("High school/GED", "Some college experience", "2-year college degree (A.A.)", "4-year college degree (BA/BS)", "Graduate or Professional Degree (MA/ MBA/ MS/ PhD)")
-numbers <- 1:5
-full_data_long_test$Education.no <- match(full_data_long_test$Education, levels) 
-
-
-# Assumptions of Pearson's Correlation: 
-
-## a) Both variables are metric
-class(full_data_long_test$proportion) # Proportion is numeric. 
-class(full_data_long_test$Education.no) # Education is an integer.
-
-## b) Linear relationship between the two variables:
-library(ggplot2)
-ggplot(full_data_long_test, aes(x = Education.no, y = proportion)) +
-    geom_point() +
-    geom_smooth(method = "lm", color = "blue") +
-    ggtitle("Scatter plot of Proportion by Education")
-## Do not have a clear linear relationship!!
-
-## c) Normal distribution:
-library(ggplot2)
-hist(full_data_long_test$proportion, xlab = "proportion", main = "Histogram of proportion")
-hist(full_data_long_test$Education.no, xlab = "Level of Education", main = "Histogram of Education Levels")
-## Also does not have a normal distribution!!
-        
-## Does not pass the assumption checks >> Not valid to calculate a Pearson's Correlation Coefficient.
-
-## Hypothetically, this would yield a correlation value of 0.08151178
-cor_test_Education <- cor.test(full_data_long_test$proportion, full_data_long_test$Education.no, method = "pearson")
-print(cor_test_Education)
-
-
-
-
-```
-
-### Reaction times in choosing DH versus NDH statements -- Mixed Model
-
-### We are interested in comparing the reaction times in choosing dehumanizing vs. non-dehumanizing statements. Here, we want to run a mixed model similar to the previous one, regressing reaction time on a binary variable denoting a DH or NDH response, with participant treated as a random effect.
-
-```{r Reaction times}
-
-# Import dataset with 'rt' (reaction time)
+STEP 3. Processing the experimental data - Wide long format
+```{r cleaning the dataset}
 experiment_data <- read.csv("~/Downloads/Dehumanization Project/experiment_data.csv")
 
-# Importing the rt associated with trials into 'full_data_long_test' dataset
-library(dplyr)
+# Viewing the data set
+dim(experiment_data)   # dimensions
+names(experiment_data) # variables
+str(experiment_data)   # structure
 
-# Calculate the reaction time as the difference in time_elapsed between rows
-experiment_data$reaction_time <- c(0, diff(experiment_data$time_elapsed))
+# Removing and renaming columns
+experiment_data <- experiment_data[ , !(names(experiment_data) %in% c('rt', 'View_history', 'internal_node_id','keep_remove','trial_type'))]
+experiment_data <- experiment_data %>% 
+                 rename(name = Name)
+experiment_data <- experiment_data %>% 
+                 rename(Prolific_ID = participant_id)
+experiment_data <- experiment_data[c("Prolific_ID", "time_elapsed", "trial_index", "responses", 
+                                 "stimulus", "button_pressed", "name", "trial", 
+                                 "agent_names_trial", "agent_DH", "agent_NDH")]
 
-experiment_data_filtered <- experiment_data %>% 
-                            filter(trial >= 1 & trial <= 10)
-experiment_data_filtered <- experiment_data_filtered %>%
-                            rename(Prolific_ID = participant_id)
-experiment_data_filtered <- experiment_data_filtered %>% 
-                            select(Prolific_ID, trial, reaction_time)
-full_data_long_test <- full_data_long_test %>%
-                       left_join(experiment_data_filtered, by = c("Prolific_ID", "trial"))
+# Convert units from 'time_elapsed' from ms to minutes and seconds
+experiment_data$time_elapsed_min_sec <- sprintf("%d:%02d", 
+                                              experiment_data$time_elapsed %/% 60000, 
+                                              (experiment_data$time_elapsed %% 60000) %/% 1000)
+experiment_data <- experiment_data[ , !(names(experiment_data) %in% c('time_elapsed'))]
+experiment_data <- experiment_data %>%
+  rename(time_elapsed = time_elapsed_min_sec)
 
+# Ensuring each participant completed the full experiment (40-41 trial_index lines). 
+participant_trial_count <- experiment_data %>%
+  group_by(Prolific_ID) %>%
+  summarise(trial_count = n_distinct(trial_index))
+incomplete_participants <- participant_trial_count %>%
+  filter(!(trial_count %in% c(40, 41)))
+if (nrow(incomplete_participants) > 0) {
+  print("Some participants did not complete the full experiment..")
+  print(incomplete_participants)
+} else {
+  print("All participants completed the full experiment.")
+}
 
-### # Mixed-Effects Linear Regression Model
-
-library(lme4) # Load necessary library
-library(lmerTest) # For summaries including p-values
-
-# Converting 'rt' from chr string (in ms) to numeric (in s)
-full_data_long_test$reaction_time <- as.numeric(full_data_long_test$reaction_time) 
-sum(is.na(full_data_long_test$reaction_time)) # Checking for any NAs
-full_data_long_test$reaction_time_secs <- full_data_long_test$reaction_time / 1000 # Convert ms to s
-head(full_data_long_test$reaction_time_secs)
-
-# The 'choice' column has already been coded as 1 for DH and 0 for NDH (binary variable)
-# 'rt' is regressed on binary DH/NDH variable, with Prolific_ID as a random effect
-rtmodel <- lmer(reaction_time_secs ~ choice + (1 | Prolific_ID), 
-                            data = full_data_long_test)
-summary(rtmodel)
-
-# Interpretation of the Plot:
-  # The very large residual (max of 21.3786) suggest an outlier. 
-  # I want to exclude these outliers from the dataset and fit a new model.
-
-
-### # CORRECTED Mixed-Effects Linear Regression Model
-  # Here I'm defining an outlier as an observation with a residual more than 3 sd away from the mean.
-library(lme4)
-library(lmerTest)                     
-residuals_original <- residuals(rtmodel) # The residuals of the original model
-mean_residuals <- mean(residuals_original) # The mean and sd of the residuals
-sd_residuals <- sd(residuals_original)
-outliers <- abs(residuals_original - mean_residuals) > (3 * sd_residuals) # Identify outliers
-full_data_long_test <- full_data_long_test[!outliers, ] # Exclude outliers from the dataset
-rtmodel_no_outliers <- lmer(reaction_time_secs ~ choice + (1 | Prolific_ID), # Fit a new model
-                            data = full_data_long_test)
-summary(rtmodel_no_outliers)
-                   
-# Interpretation of plot:
-  # REML Criterion: 3308.5, compared to 5344.3 previously (indicating a better fit)
-  # Scaled Residuals: 9.9693, compared to 21.3786 previously (removing the outliers was effective)
-  # Random Effects: Significant individual variation in reaction times.
-  # Fixed Effects in choice: Choosing DH might be associated with a shorter reaction times than NDH, but not statistically significant.
-# Takeaways:
-  # Significant individual variability in reaction times among participants
-  # No statistically significant differences in reaction time between DH and NDH choices
-
-```
-
-### Splitting the sample.
-
-### Here, we are splitting the sample between those who scored above and below the median on the "proportion" variable, and comparing their education, gender, and race of the subsamples.
-
-```{r Split sample tests}
-
-library(dplyr)
-
-# Aggregate data to get one row per participant
-# Assuming 'Education', 'Gender', and 'Race' remain consistent for each participant across all rows
-full_data_split <- full_data_long_test %>%
-                    group_by(Prolific_ID) %>%
-                    summarize(proportion = mean(proportion, na.rm = TRUE),
-                              Education = first(Education),
-                              Gender = first(Gender),
-                              Race = first(Race))
-
-# Convert to factors
-full_data_split$Education <- factor(full_data_split$Education, levels = c("High school/GED", "Some college experience", "2-year college degree (A.A.)", "4-year college degree (BA/BS)", "Graduate or Professional Degree (MA/ MBA/ MS/ PhD)"))
-full_data_split$Gender <- factor(full_data_split$Gender)
-full_data_split$Race <- factor(full_data_split$Race)
-
-# Split the dataset based on the median of the 'proportion' variable
-median_proportion <- median(full_data_split$proportion, na.rm = TRUE)
-above_median <- full_data_split %>% filter(proportion > median_proportion)
-below_median <- full_data_split %>% filter(proportion <= median_proportion)
-
-# Combine the two subsets and create a new variable 'Group' to indicate the subgroup
-above_median$Group <- 'Above Median'
-below_median$Group <- 'Below Median'
-full_data_split <- rbind(above_median, below_median)
+# Checking participants ID
+check_responses <- function(data) {
+  data %>%
+    filter(trial_index == 0) %>%
+    mutate(check = str_detect(responses, paste0("\\{\"ID\":\"", Prolific_ID, "\"\\}"))) %>%
+    filter(!check) %>%
+    select(Prolific_ID, trial_index, responses)
+}
+discrepancies <- check_responses(experiment_data)
+if (nrow(discrepancies) > 0) {
+  print("Discrepancies found in the following rows:")
+  print(discrepancies)
+} else {
+  print("All manually entered participant IDs match recorded IDs.")
+}
+experiment_data <- experiment_data %>%
+  mutate(responses = ifelse(trial_index == 0, NA, responses))
 
 
-# EDUCATION Analysis
-# Mann-Whitney U Test
-education_no <- as.numeric(full_data_split$Education)
-mann_whitney_education <- wilcox.test(education_no ~ Group, data = full_data_split)
-print(mann_whitney_education)
-# Interpretation: p-value = 0.45 > 0.05. Not statistically significant. 
+# Checking that all participants passed the Attention Checks
+# Attention Check 1: Giraffe
+discrepancy_indices <- which(experiment_data$trial_index == 3 & 
+                             !grepl("iraf|irraf|neck", experiment_data$responses))
+if (length(discrepancy_indices) > 0) {
+  cat("The following rows failed Attention Check #1")
+  print(discrepancy_indices)
+} else {
+  cat("All participants pass Attention Check #1.")
+}
+experiment_data <- experiment_data %>%
+  mutate(responses = ifelse(trial_index == 3, NA, responses))
 
-# Chi-Square Test of Independence
-education_table <- table(full_data_split$Group, full_data_split$Education)
-chi_square_education <- chisq.test(education_table)
-print(chi_square_education)
-# Interpretation: p-value = 0.4893 > 0.05. Not statistically significant. 
+# Attention Check 2: "but"
+discrepancy_indices <- which(experiment_data$trial_index == 5 & 
+                             !str_detect(experiment_data$responses, "but"))
+if (length(discrepancy_indices) > 0) {
+  cat("The following rows failed Attention Check #2.")
+  print(discrepancy_indices)
+} else {
+  cat("All participants passed Attention Check #2.")
+}
+experiment_data <- experiment_data %>%
+  mutate(responses = ifelse(trial_index == 5, NA, responses))
+
+# Attention Check 3: "rock"
+discrepancy_indices <- which(experiment_data$trial_index == 18 & 
+                             !str_detect(experiment_data$responses, "rock"))
+if (length(discrepancy_indices) > 0) {
+  cat("The following rows failed Attention Check #3.")
+  print(discrepancy_indices)
+} else {
+  cat("All participants passed Attention Check #3.")
+}
+experiment_data <- experiment_data %>%
+  mutate(responses = ifelse(trial_index == 18, NA, responses))
+
+# Cleaning the 'stimulus' column
+experiment_data <- experiment_data %>%
+  mutate(stimulus = ifelse(str_detect(stimulus, "<img src=\"img/stimuli/"), NA, stimulus))
+experiment_data <- experiment_data %>%
+  mutate(stimulus = gsub("img/stimuli/Slide([0-9]+)\\.png", "Slide \\1", stimulus))
+
+# Cleaning the 'button_pressed' column
+experiment_data <- experiment_data %>%
+  mutate(button_pressed = ifelse(
+    !str_detect(stimulus, "Slide") & 
+    !str_detect(name, "gender|phone|computer"),
+    NA, 
+    button_pressed
+  ))
+
+experiment_data <- experiment_data %>%
+  mutate(choice = sapply(1:nrow(.), function(i) {
+    if(grepl("Slide", experiment_data$stimulus[i])) {
+      # Split the agent names
+      agents <- strsplit(as.character(experiment_data$agent_names_trial[i]), ",")[[1]]
+      
+      # Determine the chosen name based on button_pressed
+      chosen_name <- ifelse(experiment_data$button_pressed[i] == 0, agents[1], agents[2])
+      
+      # Check which column (agent_DH or agent_NDH) matches the chosen name
+      if(chosen_name == experiment_data$agent_DH[i]) {
+        return("DH")
+      } else if(chosen_name == experiment_data$agent_NDH[i]) {
+        return("NDH")
+      } else {
+        return(NA)  # Return NA if no match is found
+      }
+    } else {
+      return(NA)  # Return NA if stimulus does not contain "Slide"
+    }
+  }))
 
 
-# GENDER Analysis
-# Chi-Square Test of Independence
-gender_table <- table(full_data_split$Group, full_data_split$Gender)
-chi_square_gender <- chisq.test(gender_table)
-print(chi_square_gender)
-print(gender_table)
-# Interpretation: p-value = 0.4874 > 0.05. Not statistically significant. 
+# Converting variables to correct format
+experiment_data$stimulus <- factor(experiment_data$stimulus)
+experiment_data$trial_index <- factor(experiment_data$trial_index)
+experiment_data$button_pressed <- factor(experiment_data$button_pressed)
+experiment_data$trial <- factor(experiment_data$trial)
+experiment_data$agent_DH <- factor(experiment_data$agent_DH)
+experiment_data$agent_NDH <- factor(experiment_data$agent_NDH)
+experiment_data$choice <- factor(experiment_data$choice)
+str(experiment_data) # Checking my work
 
 
-# RACE Analysis
-# Chi-Square Test of Independence
-race_table <- table(full_data_split$Group, full_data_split$Race)
-chi_square_race <- chisq.test(race_table)
-print(chi_square_race)
-print(race_table)
-# Interpretation: p-value = 0.4331 > 0.05. Not statistically significant. 
+# Cleaning up the environment
+rm(discrepancies, incomplete_participants, participant_trial_count, small_files, size_criteria_kb, discrepancy_indices, file, raw_files)
+
+# Reordering the columns
+experiment_data <- experiment_data[c("Prolific_ID", "time_elapsed", "trial_index", "responses", 
+                                 "stimulus", "button_pressed", "name", "trial", 
+                                 "agent_names_trial", "agent_DH", "agent_NDH", "choice")]
+
+experiment_data_widelong <- experiment_data
+## EXPERIMENTAL DATA IN IS WIDE-LONG FORMAT ##
 
 
-## Race Comparison Bar Chart
-library(ggplot2)
-ggplot(full_data_split, aes(x = Race, fill = Group)) +
-    geom_bar(position = position_dodge()) +
-    labs(title = "Race Distribution by Group",
-         x = "Race",
-         y = "Count of Participants") +
-    theme_minimal() +
-    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-    scale_fill_brewer(palette = "Set1")
-
-
-## Gender Comparison Bar Chart
-ggplot(full_data_split, aes(x = Gender, fill = Group)) +
-    geom_bar(position = position_dodge()) +
-    labs(title = "Gender Distribution by Group",
-         x = "Gender",
-         y = "Count of Participants") +
-    theme_minimal() +
-    scale_fill_brewer(palette = "Set1")
-
-
-## Education Comparison Bar Chart
-ggplot(full_data_split, aes(x = Education, fill = Group)) +
-    geom_bar(position = position_dodge()) +
-    labs(title = "Education Distribution by Group",
-         x = "Education",
-         y = "Count of Participants") +
-    theme_minimal() +
-    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-    scale_fill_brewer(palette = "Set1")
+# Creating a new data frame (CSV file) with experiment data
+write.csv(experiment_data_widelong, "experiment_data_widelong.csv", row.names = FALSE)
 
 
 ```
 
 
+STEP 4. Processing the experimental data - Long format
+```{r Switching experiment_data to long format}
 
-### Probability over time.
-
-### In this next part, we want to investigate whether participants become more or less likely to choose dehumanizing (DH) responses as the trials progress. In other words, are participants more or less likely to choose DH responses as the trials progress?
-
-```{r Probability over time}
-
+library(tidyr)
 library(dplyr)
+experiment_data_long <- read.csv("~/Downloads/Dehumanization Project/experiment_data_widelong.csv")
 
-# Calculating the proportion of DH choices per trial
-proportion_dh_per_trial <- full_data_long_test %>%
-                           group_by(trial) %>%
-                           summarize(proportion_dh = mean(choice == 1, na.rm = TRUE))
-print(proportion_dh_per_trial)
+# Removing 'time_elapsed' and 'trial_index' columns
+experiment_data_long <- experiment_data_long %>% 
+  select(-trial_index)
 
-library(ggplot2)
+# Creating 'gender' column
+experiment_data_long <- experiment_data_long %>% 
+  mutate(gender = case_when(
+    name == "gender" & button_pressed == 0 ~ "Male",
+    name == "gender" & button_pressed == 1 ~ "Female",
+    TRUE ~ as.character(NA)
+  ))
 
-ggplot(proportion_dh_per_trial, aes(x = trial, y = proportion_dh)) +
-    geom_line() +
-    geom_point() +
-    labs(title = "Proportion of DH Choices Over Trials",
-         x = "Trial",
-         y = "Proportion of DH Choices") +
-    theme_minimal()
+# Creating 'device' column
+experiment_data_long <- experiment_data_long %>% 
+  mutate(device = case_when(
+    name == "phone" & button_pressed == 1 ~ "Phone",
+    name == "computer" & button_pressed == 0 ~ "Computer",
+    TRUE ~ as.character(NA)
+  ))
 
-# Linear regression to test for trend
-trend_analysis <- lm(proportion_dh ~ trial, data = proportion_dh_per_trial)
-summary(trend_analysis)
+# Removing all rows without a value in 'button_pressed' column
+experiment_data_long <- experiment_data_long %>% 
+  filter(!is.na(button_pressed))
+
+# Checking for 12 rows per ppt
+prolific_counts <- table(experiment_data_long$Prolific_ID)
+if(any(prolific_counts != 12)) {
+  warning("There are Prolific_IDs with counts not equal to 12")
+}
+
+# Creating left and right columns
+experiment_data_long <- experiment_data_long %>% # Creating 'left_agent' and 'right_agent' columns
+  mutate(left_agent = ifelse(grepl(",", agent_names_trial), sub(",.*", "", agent_names_trial), NA),
+         right_agent = ifelse(grepl(",", agent_names_trial), sub(".*,", "", agent_names_trial), NA))
+experiment_data_long <- experiment_data_long %>% # Creating 'left_rating' and 'right_rating' columns
+  mutate(left_rating = ifelse(left_agent == agent_DH, "DH", "NDH"),
+         right_rating = ifelse(right_agent == agent_DH, "DH", "NDH"))
+experiment_data_long <- experiment_data_long %>% # Creating 'left_choice' and 'right_choice' columns
+  mutate(left_choice = ifelse(choice == left_rating, 1, 0),
+         right_choice = ifelse(choice == right_rating, 1, 0))
+
+# Removing unneeded columns
+experiment_data_long <- experiment_data_long %>% 
+  select(-responses, -button_pressed, -name, -agent_names_trial, -agent_DH, -agent_NDH, -choice)
+
+# Transforming the data from widelong to long format
+experiment_data_long <- experiment_data_long %>%
+  gather(key = "side", value = "agent", left_agent, right_agent) %>%
+  gather(key = "rating_side", value = "rating", left_rating, right_rating) %>%
+  gather(key = "choice_side", value = "choice", left_choice, right_choice) %>%
+  filter(ifelse(side == "left_agent", rating_side == "left_rating", rating_side == "right_rating") &
+         ifelse(side == "left_agent", choice_side == "left_choice", choice_side == "right_choice")) %>%
+  select(-rating_side, -choice_side) %>%
+  mutate(side = ifelse(side == "left_agent", "left", "right")) %>%
+  arrange(Prolific_ID, trial, side)
+
+# Remove rows where 'side' is "right" and 'gender' or 'device' is not NA
+experiment_data_long <- experiment_data_long %>%
+  filter(!(side == "right" & (!is.na(gender) | !is.na(device))))
+
+# For rows where 'side' is "left" and 'gender' is not NA, shift 'gender' up and remove the row
+rows_to_shift <- which(experiment_data_long$side == "left" & !is.na(experiment_data_long$gender))
+
+# Creating a new data frame (CSV file) with experiment data
+write.csv(experiment_data_long, "experiment_data_long.csv", row.names = FALSE)
 
 
-# Interpretation: 
-  # Multiple R-squared (0.06976), meaning the trial number does not explain much of the variation in DH choices.
-  # However, the Negative Adjusted R-squared (-0.04652) suggests that the model is not a good fit. Don't know how to make it better.
-  # p-value = 0.4609 >> 0.05, indicating that the model is not statistically significant.
-# There is not a statistically significant trend in the proportion of DH choices over the trials :/
+```
 
 
-## Bar Chart of DH Choice Proportion by Trial
-library(ggplot2)
-ggplot(proportion_dh_per_trial, aes(x = factor(trial), y = proportion_dh)) +
-    geom_bar(stat = "identity", fill = "blue") +
-    labs(title = "Proportion of DH Choices by Trial",
-         x = "Trial",
-         y = "Proportion of DH Choices") +
-    theme_minimal()
+STEP 5. Processing the survey data
+```{r cleaning the survey data}
+setwd("~/Downloads/Dehumanization Project") # Confirming working directory to the folder containing data
+survey_data <- read.csv("~/Downloads/Dehumanization Project/surveydata.csv")
+View(survey_data)
+
+# Removing, renaming, and reordering columns
+survey_data <- survey_data[ , !(names(survey_data) %in% c('Status', 'IPAddress', 'Progress','Finished','RecipientLastName','RecipientFirstName','RecipientEmail','ExternalReference','LocationLatitude','LocationLongitude','DistributionChannel','UserLanguage','StartDate','EndDate'))]
+survey_data <- survey_data[-2, ]
+rownames(survey_data) <- NULL
+survey_data <- survey_data %>% 
+                 rename(Duration_in_sec = Duration..in.seconds.,
+                        Date = RecordedDate,
+                        Prolific_ID = id,
+                        Response_ID = ResponseId,
+                        Image_Difficulties1 = Q13,
+                        Image_Difficulties2 = Q16,
+                        Comments_Questions = Q14)
+survey_data <- survey_data[c("Response_ID", "Prolific_ID", "Date","Duration_in_sec","Q2_1", "Q3_1", 
+                                 "Q3_2", "Q3_3", "Q3_4", "Q3_5", "Q3_6", "Q5_1", "Q5_2", "Q5_3", 
+                                 "Q5_4", "Q5_5", "Q5_6","Q5_7", "Age","Gender", "Race", "Income", 
+                                 "Conservatism", "Education", "Image_Difficulties1", 
+                                 "Image_Difficulties2","Comments_Questions", "Data_Quality")]
+
+# Replacing values with notes to just the number
+survey_data[] <- lapply(survey_data, function(x) gsub("1 = Not at all", "1", x))
+survey_data[] <- lapply(survey_data, function(x) gsub("4 = A moderate amount", "4", x))
+survey_data[] <- lapply(survey_data, function(x) gsub("7 = An extreme amount", "7", x))
+survey_data[] <- lapply(survey_data, function(x) gsub("1 = Strongly disagree", "1", x))
+survey_data[] <- lapply(survey_data, function(x) gsub("7 = Strongly agree", "7", x))
+
+# Converting all columns to the correct variable types
+survey_data$Date <- as.Date(survey_data$Date, format = "%Y-%m-%d %H:%M:%S")
+survey_data$Response_ID <- factor(survey_data$Response_ID) # Response_ID: chr to factor
+survey_data$Response_ID[1] <- NA
+survey_data$Prolific_ID <- factor(survey_data$Prolific_ID) # Prolific_ID: chr to factor
+survey_data$Prolific_ID[1] <- NA
+survey_data$Q3_1 <- factor(survey_data$Q3_1) # Q3_1: chr to factor
+survey_data$Q3_2 <- factor(survey_data$Q3_2) # Q3_2: chr to factor
+survey_data$Q3_3 <- factor(survey_data$Q3_3) # Q3_3: chr to factor
+survey_data$Q3_4 <- factor(survey_data$Q3_4) # Q3_4: chr to factor
+survey_data$Q3_5 <- factor(survey_data$Q3_5) # Q3_5: chr to factor
+survey_data$Q3_6 <- factor(survey_data$Q3_6) # Q3_6: chr to factor
+survey_data$Q5_1 <- factor(survey_data$Q5_1) # Q5_1: chr to factor
+survey_data$Q5_2 <- factor(survey_data$Q5_2) # Q5_2: chr to factor
+survey_data$Q5_3 <- factor(survey_data$Q5_3) # Q5_3: chr to factor
+survey_data$Q5_4 <- factor(survey_data$Q5_4) # Q5_4: chr to factor
+survey_data$Q5_5 <- factor(survey_data$Q5_5) # Q5_5: chr to factor
+survey_data$Q5_6 <- factor(survey_data$Q5_6) # Q5_6: chr to factor
+survey_data$Q5_7 <- factor(survey_data$Q5_7) # Q5_7: chr to factor
+survey_data$Race <- factor(survey_data$Race) # Race: chr to factor
+survey_data$Gender <- factor(survey_data$Gender) # Race: chr to factor
+survey_data$Income <- factor(survey_data$Income) # Race: chr to factor
+survey_data$Conservatism <- factor(survey_data$Conservatism) # Conservatism: chr to ordered factor
+survey_data$Image_Difficulties1 <- factor(survey_data$Image_Difficulties1) # Image_Difficulties1: chr to factor
+survey_data$Image_Difficulties2 <- factor(survey_data$Image_Difficulties2) # Image_Difficulties2: chr to factor
+survey_data$Comments_Questions <- factor(survey_data$Comments_Questions) # Comments_Questions: chr to factor
+survey_data$Data_Quality <- factor(survey_data$Data_Quality) # Data_Quality: chr to factor
+
+survey_data$Conservatism <- factor(
+  survey_data$Conservatism,
+  levels = c("Extremely Liberal", "Liberal", "Somewhat Liberal", 
+             "Middle of the Road", "Somewhat Conservative", 
+             "Conservative", "Extremely Conservative"),
+  ordered = TRUE
+)
+survey_data$Education <- factor( # Education: chr to ordered factor
+  survey_data$Education,
+  levels = c("No degree", "High school/GED", "Some college experience", 
+             "2-year college degree (A.A.)", "4-year college degree (BA/BS)", 
+             "Graduate or Professional Degree (MA/ MBA/ MS/ PhD)"),
+  ordered = TRUE)
+
+# Ignore Warnings for the following conversions (reason: First row cannot be a numerical value)
+survey_data$Duration_in_sec <- as.numeric(survey_data$Duration_in_sec) # Duration: chr to num
+survey_data$Q2_1 <- as.numeric(survey_data$Q2_1) # Q2_1: chr to num
+survey_data$Age <- as.numeric(survey_data$Age) # Age: chr to num
+
+# ReViewing responses to the Image Difficulty Question
+survey_data$Image_Difficulties2[survey_data$Image_Difficulties2 == ""] <- NA
+print(levels(survey_data$Image_Difficulties2))
+
+# ReViewing responses to the Image Difficulty Question
+survey_data$Comments_Questions[survey_data$Comments_Questions == ""] <- NA
+survey_data$Comments_Questions <- as.character(survey_data$Comments_Questions)
+survey_data$Comments_Questions[survey_data$Comments_Questions %in% c("No", "None", "no", "No comments", "I have no comments. ")] <- NA
+survey_data$Comments_Questions <- factor(survey_data$Comments_Questions)
+print(levels(survey_data$Comments_Questions))
+
+
+```
+
+
+STEP 6. Merging Survey Data with Experimental Data - Wide-long format 
+```{r integrating survey_data into experiment_data_widelong}
+
+# Convert 'Prolific_ID' to character in both datasets
+experiment_data_widelong$Prolific_ID <- as.character(experiment_data_widelong$Prolific_ID)
+survey_data$Prolific_ID <- as.character(survey_data$Prolific_ID)
+
+
+# Check if 'Prolific_ID' exists in both datasets and has the same data type
+if("Prolific_ID" %in% names(experiment_data_widelong) & "Prolific_ID" %in% names(survey_data)) {
+  if(class(experiment_data_widelong$Prolific_ID) == class(survey_data$Prolific_ID)) {
+
+    full_data_widelong <- merge(experiment_data_widelong, survey_data, by = "Prolific_ID", all.x = TRUE, all.y = TRUE)
+    
+  } else {
+    stop("Data types of 'Prolific_ID' in both datasets do not match.")
+  }
+} else {
+  stop("'Prolific_ID' column not found in one or both datasets.")
+}
+
+View(full_data_widelong)
+
+# Creating a new data frame (CSV file) with merged experimental and survey data
+write.csv(full_data_widelong, "full_data_widelong.csv", row.names = FALSE)
+
+```
+
+STEP 7. Merging Survey Data with Experimental Data - Long format 
+```{r integrating survey_data into experiment_data_long}
+
+# Convert 'Prolific_ID' to character in both datasets
+experiment_data_long$Prolific_ID <- as.character(experiment_data_long$Prolific_ID)
+survey_data$Prolific_ID <- as.character(survey_data$Prolific_ID)
+
+
+# Check if 'Prolific_ID' exists in both datasets and has the same data type
+if("Prolific_ID" %in% names(experiment_data_long) & "Prolific_ID" %in% names(survey_data)) {
+  if(class(experiment_data_long$Prolific_ID) == class(survey_data$Prolific_ID)) {
+
+    full_data_long <- merge(experiment_data_long, survey_data, by = "Prolific_ID", all.x = TRUE, all.y = TRUE)
+    
+  } else {
+    stop("Data types of 'Prolific_ID' in both datasets do not match.")
+  }
+} else {
+  stop("'Prolific_ID' column not found in one or both datasets.")
+}
+
+# Creating a new data frame (CSV file) with merged experimental and survey data
+write.csv(full_data_long, "full_data_long.csv", row.names = FALSE)
 
 ```
