@@ -32,7 +32,6 @@ pkgs_all <- c(pkgs)
 # Change out the date for today's date (unless you are running an old analysis)
 groundhog.library(pkgs_all, "2024-1-7")
 
-
 # Importing the data: 
 full_data_widelong <- read.csv("~/Downloads/Dehumanization Project/full_data_widelong.csv")
 
@@ -163,7 +162,6 @@ print(binomial_test)
 
 ```
 
-
 ### Running a Mixed-effects Model
 
 #### This new approach provides insights into the variability of choices between "DH" and "NDH" across participants, accounting for the fact that multiple choices come from the same participant.
@@ -244,7 +242,7 @@ ggplot(full_data_long_test, aes(x = Prolific_ID, y = predicted_prob)) +
 
 ### Running Pearson correlations
 
-### We are interested in looking at the zero-order correlations between the "proportions" variable (indicating the proportion of DH responses selected out of the ten total trials) and the following: Current general affect, Current discrete emotions, Individual differences in support for moral exclusion, Political orientation of participants, Income, Age, and Gender.
+### We are interested in looking at the zero-order correlations between the "proportions" variable (indicating the proportion of DH responses selected out of the ten total trials) and the following: Current general affect, Current discrete emotions, Individual differences in support for moral exclusion, Conservatism, Income, Age, and Gender.
 
 ```{r Zero-order / Pearson correlations}
 
@@ -385,11 +383,30 @@ hist(full_data_long_test$Q5_avg, xlab = "Current Moral Exclusion", main = "Histo
         
 ## Does not pass the assumption checks >> Not valid to calculate a Pearson's Correlation Coefficient.
 
-## Hypothetically, this would yield a correlation value of 0.2361316
+## Hypothetically, this would yield a correlation value of 0.24
 cor_test_Q5_avg <- cor.test(full_data_long_test$proportion, full_data_long_test$Q5_avg, method = "pearson")
 print(cor_test_Q5_avg)
 
 
+## Given that the assumptions for Pearson's correlation were not met (e.g., non-normal distributions, ordinal data, and non-linear relationships), we can instead run Spearman's rho correlation (a non-parametric measure of rank correlation).
+spearman_moral <- cor.test(full_data_long_test$proportion, full_data_long_test$Q5_avg, method = "spearman")
+print(spearman_moral)
+
+# Interpretation
+  # The correlation coefficient rho is 0.31, indicating a positive correlation between the proportion of DH choices and the average Q5 score (support for moral exclusion). 
+  # The p-value is 5.902e-13 (< 0.05) indicating a statistically significant monotonic relationship between the two variables.
+  # We can conclude that there is a significant monotonic relationship between the proportion of DH choices and support for moral exclusion. 
+  # The warning "Cannot compute exact p-value with ties" is supposedly common with Spearman's correlation when the data have many tied ranks.
+# This result implies that individuals who are more supportive of moral exclusion are also more likely to choose dehumanizing responses.
+
+# Scatter plot with regression line for proportion vs Moral Exclusion
+ggplot(full_data_long_test, aes(x = proportion, y = Q5_avg)) +
+    geom_point() +
+    geom_smooth(method = "lm", color = "blue") +
+    labs(title = "Relationship between Proportion of DH Choices and Moral Exclusion",
+         x = "Proportion of DH Choices",
+         y = "Moral Exclusion") +
+    theme_minimal()
 
 #  -----------------------------------------------------------------------------------------
 # 4. Political orientation of participants
@@ -439,6 +456,28 @@ print(cor_test_Conservatism)
 ## A value of 0.39 would indicate a Low or Moderate Correlation
 
   
+
+## Given that the assumptions for Pearson's correlation were not met (e.g., non-normal distributions, ordinal data, and non-linear relationships), we can instead run Spearman's rho correlation (a non-parametric measure of rank correlation).
+spearman_conservatism <- cor.test(full_data_long_test$proportion, full_data_long_test$Conservatism.no, method = "spearman")
+print(spearman_conservatism)
+
+# Interpretation
+  # The correlation coefficient rho is 0.34, indicating a positive correlation between the proportion of DH choices and political conservatism. 
+  # The p-value is 9.511e-15 (< 0.05) indicating a statistically significant monotonic relationship between the two variables.
+  # We can conclude that there is a significant monotonic relationship between the proportion of DH choices and level of conservatism. 
+  # The warning "Cannot compute exact p-value with ties" is supposedly common with Spearman's correlation when the data have many tied ranks.
+# Participants with higher conservatism scores tend to choose DH responses more frequently than those with lower conservatism scores
+
+# Scatter plot with regression line for proportion vs Conservatism
+library(ggplot2)
+ggplot(full_data_long_test, aes(x = proportion, y = Conservatism.no)) +
+    geom_point() +
+    geom_smooth(method = "lm", color = "blue") +
+    labs(title = "Relationship between Proportion of DH Choices and Conservatism",
+         x = "Proportion of DH Choices",
+         y = "Conservatism") +
+    theme_minimal()
+
   #  -----------------------------------------------------------------------------------------
 # 4. Income 
 
@@ -449,7 +488,7 @@ print(cor_test_Conservatism)
 #4. $120,000-$199,999
 #5. More than $200,000
 
-# Create Conservatism.no column with corresponding numerical values
+# Create Income column with corresponding numerical values
 levels <- c("Less than $40,000", "$40,000-$79,999", "$80,000-$119,999",
             "$120,000-$199,999", "More than $200,000")
 numbers <- 1:5
@@ -742,6 +781,39 @@ print(race_table)
 # Interpretation: p-value = 0.4331 > 0.05. Not statistically significant. 
 
 
+## Race Comparison Bar Chart
+library(ggplot2)
+ggplot(full_data_split, aes(x = Race, fill = Group)) +
+    geom_bar(position = position_dodge()) +
+    labs(title = "Race Distribution by Group",
+         x = "Race",
+         y = "Count of Participants") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+    scale_fill_brewer(palette = "Set1")
+
+
+## Gender Comparison Bar Chart
+ggplot(full_data_split, aes(x = Gender, fill = Group)) +
+    geom_bar(position = position_dodge()) +
+    labs(title = "Gender Distribution by Group",
+         x = "Gender",
+         y = "Count of Participants") +
+    theme_minimal() +
+    scale_fill_brewer(palette = "Set1")
+
+
+## Education Comparison Bar Chart
+ggplot(full_data_split, aes(x = Education, fill = Group)) +
+    geom_bar(position = position_dodge()) +
+    labs(title = "Education Distribution by Group",
+         x = "Education",
+         y = "Count of Participants") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+    scale_fill_brewer(palette = "Set1")
+
+
 ```
 
 
@@ -780,6 +852,16 @@ summary(trend_analysis)
   # However, the Negative Adjusted R-squared (-0.04652) suggests that the model is not a good fit. Don't know how to make it better.
   # p-value = 0.4609 >> 0.05, indicating that the model is not statistically significant.
 # There is not a statistically significant trend in the proportion of DH choices over the trials :/
+
+
+## Bar Chart of DH Choice Proportion by Trial
+library(ggplot2)
+ggplot(proportion_dh_per_trial, aes(x = factor(trial), y = proportion_dh)) +
+    geom_bar(stat = "identity", fill = "blue") +
+    labs(title = "Proportion of DH Choices by Trial",
+         x = "Trial",
+         y = "Proportion of DH Choices") +
+    theme_minimal()
 
 
 ```
